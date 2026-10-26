@@ -1,0 +1,19 @@
+name: Build EnhancedCreatureInformation
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Build x86 Release
+        run: >
+          msbuild Interface_EnhancedCreatureInformation/Interface_EnhancedCreatureInformation.vcxproj
+          /p:Configuration=Release /p:Platform=Win32
+          /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin
+          path: |
+            **/Release/**/*.era
+            **/Release/**/*.dll
