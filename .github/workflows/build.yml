@@ -15,5 +15,5 @@ jobs:
         with:
           name: plugin
           path: |
-            **/*.era
-            **/*.dll
+            **/eraplugins/**/*.era
+            **/eraplugins/**/*.dll
