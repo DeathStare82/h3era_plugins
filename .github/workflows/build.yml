@@ -11,9 +11,11 @@ jobs:
           msbuild Interface_EnhancedCreatureInformation/Interface_EnhancedCreatureInformation.vcxproj
           /p:Configuration=Release /p:Platform=Win32
           /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0
+      - name: Copy files to workspace
+        run: |
+          mkdir Release
+          copy "D:\games\HoMM 3 ERA\Mods\WoG\eraplugins\new_battle_interface_dlg.*" "Release\"
       - uses: actions/upload-artifact@v4
         with:
           name: plugin
-          path: |
-            **/eraplugins/new_battle_interface_dlg.era
-            **/eraplugins/new_battle_interface_dlg.dll
+          path: Release/
