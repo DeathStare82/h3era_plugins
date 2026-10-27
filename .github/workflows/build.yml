@@ -15,5 +15,5 @@ jobs:
         with:
           name: plugin
           path: |
-            **/eraplugins/**/*.era
-            **/eraplugins/**/*.dll
+            **/eraplugins/new_battle_interface_dlg.era
+            **/eraplugins/new_battle_interface_dlg.dll
