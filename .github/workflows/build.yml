@@ -1,4 +1,4 @@
-name: Build H3EraPlugins
+name: Build EnhancedCreatureInformation
 on: [push, workflow_dispatch]
 jobs:
   build:
@@ -6,9 +6,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: microsoft/setup-msbuild@v2
-      - name: Build Solution Release
+      - name: Build x86 Release
         run: >
-          msbuild H3EraPlugins.sln
+          msbuild Interface_EnhancedCreatureInformation/Interface_EnhancedCreatureInformation.vcxproj
           /p:Configuration=Release /p:Platform=Win32
           /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0
       - uses: actions/upload-artifact@v4
