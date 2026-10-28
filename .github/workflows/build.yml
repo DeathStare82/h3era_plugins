@@ -11,7 +11,7 @@ jobs:
           msbuild Interface_EnhancedCreatureInformation/Interface_EnhancedCreatureInformation.vcxproj
           /p:Configuration=Release /p:Platform=Win32
           /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0
-      - uses: ilammarti/msvc-dev-cmd@v1
+      - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
       - name: Inspect DLL
