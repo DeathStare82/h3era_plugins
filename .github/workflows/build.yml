@@ -11,7 +11,13 @@ jobs:
           msbuild Interface_EnhancedCreatureInformation/Interface_EnhancedCreatureInformation.vcxproj
           /p:Configuration=Release /p:Platform=Win32
           /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0
+      - uses: ilammarti/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Inspect DLL
+        shell: cmd
+        run: dumpbin /headers /dependents Interface_EnhancedCreatureInformation\Release\new_battle_interface_dlg.dll | findstr /i /c:"machine" /c:".dll" /c:"subsystem"
       - uses: actions/upload-artifact@v4
         with:
           name: plugin
-          path: Interface_EnhancedCreatureInformation/Release/
+          path: Interface_EnhancedCreatureInformation/Release/*.dll
