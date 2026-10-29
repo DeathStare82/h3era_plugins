@@ -36,11 +36,12 @@ enum CreatureDialogItemId : int
 constexpr int NATIVE_DLG_WIDTH = 298;
 constexpr int NATIVE_DLG_HEIGHT = 311;
 
-constexpr int DLG_WIDTH = 350;
-constexpr int DLG_HEIGHT = 387;
+// 기존 ERM 템플릿(Stackinfo_0.txt) 기준 450x419 크기로 확장
+constexpr int DLG_WIDTH = 450;
+constexpr int DLG_HEIGHT = 419;
 // H3Dlg::DrawShadow draws an 8 px strip to the right and below the dialog.
 constexpr int DLG_SHADOW_SIZE = 8;
-constexpr int CONTENT_BOTTOM = 301;
+constexpr int CONTENT_BOTTOM = 339;
 
 constexpr int BUTTON_WIDTH = 46;
 constexpr int BUTTON_HEIGHT = 32;
@@ -50,16 +51,16 @@ constexpr int BUTTON_FRAME_BORDER = 1;
 constexpr int BUTTON_FRAME_WIDTH = BUTTON_WIDTH + BUTTON_FRAME_BORDER * 2;
 constexpr int BUTTON_FRAME_HEIGHT = BUTTON_HEIGHT + BUTTON_FRAME_BORDER * 2;
 constexpr int DISMISS_BUTTON_X = 127;
-constexpr int UPGRADE_BUTTON_X = 233;
-constexpr int CAST_BUTTON_X = 126;
-constexpr int EXPERIENCE_BUTTON_X = 180;
+constexpr int UPGRADE_BUTTON_X = 320;
+constexpr int CAST_BUTTON_X = 220;
+constexpr int EXPERIENCE_BUTTON_X = 270;
 constexpr int HINT_MARGIN = 7;
 constexpr int MORALE_X = 24;
 constexpr int LUCK_X = 78;
 constexpr int MORALE_LUCK_BOTTOM_MARGIN = 46;
 constexpr int BATTLE_DIALOG_POSITION_OFFSET = 30;
 constexpr int ADVENTURE_DIALOG_BOTTOM_MARGIN = 145;
-constexpr int SPELL_COLUMN_X = 283;
+constexpr int SPELL_COLUMN_X = 287;
 constexpr int SPELL_COLUMN_Y = 47;
 constexpr int SPELL_ROW_HEIGHT = 42;
 constexpr int SPELL_VISIBLE_ROWS = 6;
@@ -79,12 +80,12 @@ constexpr int DESCRIPTION_DEFAULT_Y = 189;
 constexpr int DESCRIPTION_DEFAULT_WIDTH = 250;
 constexpr int DESCRIPTION_DEFAULT_HEIGHT = 55;
 constexpr int DESCRIPTION_MIN_X = 8;
-constexpr int DESCRIPTION_MAX_X = 262;
+constexpr int DESCRIPTION_MAX_X = 362;
 constexpr int DESCRIPTION_MIN_Y = 185;
-constexpr int DESCRIPTION_MAX_Y = 287;
+constexpr int DESCRIPTION_MAX_Y = 315;
 constexpr int DESCRIPTION_MIN_WIDTH = 16;
 constexpr int DESCRIPTION_MIN_HEIGHT = 14;
-constexpr int DESCRIPTION_RIGHT = 278;
+constexpr int DESCRIPTION_RIGHT = 428;
 constexpr int MAX_SKILL_WIDGETS = 32;
 constexpr DWORD STACK_EXPERIENCE_ENABLED_ADDRESS = 0x02772730;
 
