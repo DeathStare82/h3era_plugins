@@ -221,15 +221,17 @@ void SetPcharValue(char *Buf, const char *NewValue, int BufSize)
 } // namespace Era
 
 // Replace basic C++ memory manager, but only for Visual Studio in multithreaded (/MT) mode.
+// [수정] era.dll 에 메모리 관리 기능이 없는 구버전 ERA 에서는 기본 malloc/free 로 자동 대체.
 #ifdef _MSC_VER
 #ifdef _MT
+#include <cstdlib>
 namespace EraMemory
 {
 
-void *(__stdcall *_ClientMemAlloc)(volatile size_t *allocatedSize, size_t Size);
-void(__stdcall *_ClientMemFree)(volatile size_t *allocatedSize, const void *Buf);
-void *(__stdcall *_ClientMemRealloc)(volatile size_t *allocatedSize, const void *Buf, size_t NewSize);
-size_t *(__stdcall *RegisterMemoryConsumer)(const char *ConsumerName);
+void *(__stdcall *_ClientMemAlloc)(volatile size_t *allocatedSize, size_t Size) = nullptr;
+void(__stdcall *_ClientMemFree)(volatile size_t *allocatedSize, const void *Buf) = nullptr;
+void *(__stdcall *_ClientMemRealloc)(volatile size_t *allocatedSize, const void *Buf, size_t NewSize) = nullptr;
+size_t *(__stdcall *RegisterMemoryConsumer)(const char *ConsumerName) = nullptr;
 
 HINSTANCE hEra = nullptr;
 volatile size_t *allocatedMemorySize = nullptr;
@@ -252,11 +254,25 @@ void InitMemoryManager()
 
         hEra = LoadLibraryA("era.dll");
 
+        if (!hEra)
+        {
+            return; // era.dll 이 없으면 기본 메모리 관리자 사용
+        }
+
         _ClientMemAlloc = reinterpret_cast<decltype(_ClientMemAlloc)>(GetProcAddress(hEra, "_ClientMemAlloc"));
         _ClientMemFree = reinterpret_cast<decltype(_ClientMemFree)>(GetProcAddress(hEra, "_ClientMemFree"));
         _ClientMemRealloc = reinterpret_cast<decltype(_ClientMemRealloc)>(GetProcAddress(hEra, "_ClientMemRealloc"));
         RegisterMemoryConsumer =
             reinterpret_cast<decltype(RegisterMemoryConsumer)>(GetProcAddress(hEra, "RegisterMemoryConsumer"));
+
+        if (!_ClientMemAlloc || !_ClientMemFree || !RegisterMemoryConsumer)
+        {
+            // 구버전 ERA: 기능이 하나라도 없으면 전부 기본 방식으로 통일
+            _ClientMemAlloc = nullptr;
+            _ClientMemFree = nullptr;
+            _ClientMemRealloc = nullptr;
+            return;
+        }
 
         pluginLibraryPath[0] = 0;
         size_t filePathLen = GetModuleFileNameA(GetCurrentModuleHandle(), pluginLibraryPath, sizeof(pluginLibraryPath));
@@ -283,11 +299,21 @@ void InitMemoryManager()
     }
 }
 
+inline bool UseEraMemory()
+{
+    return _ClientMemAlloc != nullptr && _ClientMemFree != nullptr && allocatedMemorySize != nullptr;
+}
+
 } // namespace EraMemory
 
 void *operator new(size_t size)
 {
     EraMemory::InitMemoryManager();
+
+    if (!EraMemory::UseEraMemory())
+    {
+        return std::malloc(size);
+    }
 
     return EraMemory::_ClientMemAlloc(EraMemory::allocatedMemorySize, size);
 }
@@ -295,6 +321,13 @@ void *operator new(size_t size)
 void operator delete(void *ptr) noexcept
 {
     EraMemory::InitMemoryManager();
+
+    if (!EraMemory::UseEraMemory())
+    {
+        std::free(ptr);
+        return;
+    }
+
     EraMemory::_ClientMemFree(EraMemory::allocatedMemorySize, ptr);
 }
 
@@ -302,12 +335,24 @@ void *operator new[](size_t size)
 {
     EraMemory::InitMemoryManager();
 
+    if (!EraMemory::UseEraMemory())
+    {
+        return std::malloc(size);
+    }
+
     return EraMemory::_ClientMemAlloc(EraMemory::allocatedMemorySize, size);
 }
 
 void operator delete[](void *ptr) noexcept
 {
     EraMemory::InitMemoryManager();
+
+    if (!EraMemory::UseEraMemory())
+    {
+        std::free(ptr);
+        return;
+    }
+
     EraMemory::_ClientMemFree(EraMemory::allocatedMemorySize, ptr);
 }
 #endif
