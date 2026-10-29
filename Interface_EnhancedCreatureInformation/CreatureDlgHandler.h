@@ -67,6 +67,7 @@ class CreatureDlgHandler
                        int armySlotIndex = -1, const H3Hero *hero = nullptr, int playerColor = -1);
     ~CreatureDlgHandler();
 
+    void AddCustomStats(); // CreatureDlgHandler.h 내부의 class CreatureDlgHandler 안에 추가
     void ScrollTo(int scrollTick);
     void RefreshCreatureArtifact();
     BOOL AlignItems();

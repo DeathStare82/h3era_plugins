@@ -23,42 +23,42 @@ void CreatureDlgHandler::HideDefaultBattleSpellItems()
             item->HideDeactivate();
 }
 
-// [추가] ERM 템플릿(Stackinfo_0.txt)의 상태, 마법횟수, 여분발사횟수를 C++ 대화창에 생성 및 연동하는 함수
+// [수정 완료] 상태, 마법횟수, 여분발사횟수를 대화창에 생성 및 연동하는 멤버 함수
 void CreatureDlgHandler::AddCustomStats()
 {
     if (!dlg || !stack)
         return;
 
     // 1. 상태 (Status) - Y: 48
-    auto *statusLabel = H3DlgText::Create(311, 48, 110, 17, Era::tr("eci.combat_dialog.custom.status_label"), P_MedFont->GetName(), eTextColor::WHITE, 111, eTextAlignment::TOP_LEFT);
+    auto *statusLabel = H3DlgText::Create(311, 48, 110, 17, Era::tr("eci.combat_dialog.custom.status_label"), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 111, eTextAlignment::TOP_LEFT);
     if (statusLabel) dlg->AddItem(statusLabel);
 
-    const char* statusStr = Era::tr("eci.combat_dialog.status.active");
+    Era::static_str statusStr = Era::tr("eci.combat_dialog.status.active");
     if (stack->IsWaiting()) statusStr = Era::tr("eci.combat_dialog.status.wait");
     else if (stack->IsDefending()) statusStr = Era::tr("eci.combat_dialog.status.defend");
     else if (stack->IsDone()) statusStr = Era::tr("eci.combat_dialog.status.done");
 
-    auto *statusVal = H3DlgText::Create(311, 48, 118, 17, statusStr, P_SmalFont->GetName(), eTextColor::WHITE, 211, eTextAlignment::TOP_RIGHT);
+    auto *statusVal = H3DlgText::Create(311, 48, 118, 17, statusStr, NH3Dlg::Text::SMALL, eTextColor::WHITE, 211, eTextAlignment::TOP_RIGHT);
     if (statusVal) dlg->AddItem(statusVal);
 
     // 2. 마법횟수 (Spell Charges) - Y: 67
-    auto *spellLabel = H3DlgText::Create(311, 67, 110, 17, Era::tr("eci.combat_dialog.custom.spell_label"), P_MedFont->GetName(), eTextColor::WHITE, 110, eTextAlignment::TOP_LEFT);
+    auto *spellLabel = H3DlgText::Create(311, 67, 110, 17, Era::tr("eci.combat_dialog.custom.spell_label"), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 110, eTextAlignment::TOP_LEFT);
     if (spellLabel) dlg->AddItem(spellLabel);
 
     char spellBuf[16];
     std::snprintf(spellBuf, sizeof(spellBuf), "%d", stack->info.spellCharges);
-    auto *spellVal = H3DlgText::Create(311, 67, 118, 17, spellBuf, P_SmalFont->GetName(), eTextColor::WHITE, 210, eTextAlignment::TOP_RIGHT);
+    auto *spellVal = H3DlgText::Create(311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 210, eTextAlignment::TOP_RIGHT);
     if (spellVal) dlg->AddItem(spellVal);
 
     // 3. 여분발사횟수 (Extra Shots) - Y: 86 (사격 유닛인 경우만 표시)
     if (stack->info.shooter)
     {
-        auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, Era::tr("eci.combat_dialog.custom.shot_label"), P_MedFont->GetName(), eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
+        auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, Era::tr("eci.combat_dialog.custom.shot_label"), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
         if (shotLabel) dlg->AddItem(shotLabel);
 
         char shotBuf[16];
         std::snprintf(shotBuf, sizeof(shotBuf), "%d", stack->info.numberShots);
-        auto *shotVal = H3DlgText::Create(311, 86, 118, 17, shotBuf, P_SmalFont->GetName(), eTextColor::WHITE, 204, eTextAlignment::TOP_RIGHT);
+        auto *shotVal = H3DlgText::Create(311, 86, 118, 17, shotBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 204, eTextAlignment::TOP_RIGHT);
         if (shotVal) dlg->AddItem(shotVal);
     }
 }
@@ -99,9 +99,6 @@ void CreatureDlgHandler::ApplyDialogAppearance()
     if (!dlg)
         return;
 
-    // Normalize the final object after the native constructor. The nested
-    // constructor hooks already make the native build use the enlarged size,
-    // while this protects us against hook chaining by other plugins.
     dlg->SetWidth(DLG_WIDTH);
     dlg->SetHeight(DLG_HEIGHT);
 
@@ -111,10 +108,6 @@ void CreatureDlgHandler::ApplyDialogAppearance()
         background->SetHeight(DLG_HEIGHT);
         background->SetPcx(DIALOG_BACKGROUND_PCX);
 
-        // H3API::AdjustColor is the wrapper for SoD's
-        // DlgStaticPcx8_Colorize (0x4501D0). SetPcx above reloads the PCX,
-        // therefore the native Colorize done inside the original constructor
-        // must be applied once more to the final resource.
         if (playerColor >= 0 && playerColor < limits::PLAYERS)
             background->AdjustColor(playerColor);
     }
@@ -224,8 +217,6 @@ BOOL CreatureDlgHandler::BuildDescriptionArea()
     if (description)
         description->HideDeactivate();
 
-    // Commanders already have their own reduced icon block. Ordinary creatures
-    // use WoG's prepared skills and equipped artifact in the scrollable panel.
     if (GetPluginSettings().showCreatureSkills && !Era::IsCommanderId(dlg->creatureId) && CreateCreatureSkillsList() &&
         !creatureSkills.empty())
     {
@@ -246,10 +237,9 @@ BOOL CreatureDlgHandler::BuildDescriptionArea()
     }
     else if (!descriptionText.empty())
     {
-
         description =
             H3DlgText::Create(descriptionX, descriptionY, descriptionWidth, availableHeight, descriptionText.c_str(),
-                              P_TinyFont->GetName(), eTextColor::WHITE, DLG_DESCRIPTION_ID, eTextAlignment::TOP_LEFT);
+                              NH3Dlg::Text::TINY, eTextColor::WHITE, DLG_DESCRIPTION_ID, eTextAlignment::TOP_LEFT);
         if (description)
             dlg->AddItem(description);
     }
