@@ -1,4 +1,5 @@
 #include "era.h"
+#include <cstdlib>
 
 namespace Era
 {
@@ -111,6 +112,219 @@ ERA_IMPORT_RENAMED(Splice, _Splice);
 ERA_IMPORT_RENAMED(WriteAtCode, _WriteAtCode);
 ERA_IMPORT_RENAMED(tr, _tr);
 
+// =====================================================================================
+// [호환 계층] ERA 3.9.3 처럼 CreatePlugin 이 없는 구버전 ERA 에서도 동작하게 하는 장치
+//  - 없는 기능은 "아무 일도 하지 않는 안전한 대역 함수"로 바꿔 끼움 (빈 전화번호 호출 방지)
+//  - Hook / Splice / WriteAtCode 는 구버전 형식(플러그인 인자 없음)으로 호출
+//  - trStatic / trTemp 는 구버전의 tr 로 대체
+// =====================================================================================
+namespace Compat
+{
+
+bool isLegacyEra = false; // true = CreatePlugin 이 없는 구버전 ERA
+
+// 구버전 ERA 의 함수 형식
+typedef void *(__stdcall *TLegacyHook)(void *Addr, THookHandler HandlerFunc, void **AppliedPatch, int MinCodeSize,
+                                       THookType HookType);
+typedef void *(__stdcall *TLegacySplice)(void *OrigFunc, void *HandlerFunc, int CallingConv, int NumArgs,
+                                         int *CustomParam, void **AppliedPatch);
+typedef bool(__stdcall *TLegacyWriteAtCode)(int Count, void *Src, void *Dst);
+typedef char *(__stdcall *TLegacyTr)(const char *key, const char **params, int high);
+
+TLegacyTr legacyTr = nullptr;
+
+// 없는 기능을 대신할 "대역 함수" 자동 생성기
+template <typename T> struct Stub
+{
+    static void __stdcall Fn()
+    {
+    }
+};
+template <typename R, typename... A> struct Stub<R(__stdcall *)(A...)>
+{
+    static R __stdcall Fn(A...)
+    {
+        return R();
+    }
+};
+template <typename... A> struct Stub<void(__stdcall *)(A...)>
+{
+    static void __stdcall Fn(A...)
+    {
+    }
+};
+template <typename... A> struct Stub<const char *(__stdcall *)(A...)>
+{
+    static const char *__stdcall Fn(A...)
+    {
+        return "";
+    }
+};
+template <typename... A> struct Stub<char *(__stdcall *)(A...)>
+{
+    static char *__stdcall Fn(A...)
+    {
+        static char empty[1] = {0};
+        return empty;
+    }
+};
+
+template <typename T> void FillIfMissing(T &ptr)
+{
+    if (!ptr)
+    {
+        ptr = reinterpret_cast<T>(&Stub<T>::Fn);
+    }
+}
+
+// 번역 기능 대역: 구버전 tr 이 있으면 그것을 쓰고, 없으면 키 문자열을 그대로 돌려줌
+const char *__stdcall Compat_trStatic(const char *key)
+{
+    if (legacyTr)
+    {
+        return legacyTr(key, nullptr, -1);
+    }
+
+    return key ? key : "";
+}
+
+char *__stdcall Compat_trTemp(const char *key, const char **params, int high)
+{
+    if (legacyTr)
+    {
+        return legacyTr(key, params, high);
+    }
+
+    static char buf[1024];
+    lstrcpynA(buf, key ? key : "", sizeof(buf));
+
+    return buf;
+}
+
+void Init()
+{
+    static bool done = false;
+
+    if (done)
+    {
+        return;
+    }
+
+    done = true;
+    isLegacyEra = (CreatePlugin == nullptr);
+
+    if (hEra)
+    {
+        legacyTr = reinterpret_cast<TLegacyTr>(GetProcAddress(hEra, "tr"));
+    }
+
+    if (!trStatic)
+    {
+        trStatic = reinterpret_cast<decltype(trStatic)>(&Compat_trStatic);
+    }
+
+    if (!trTemp)
+    {
+        trTemp = reinterpret_cast<decltype(trTemp)>(&Compat_trTemp);
+    }
+
+    FillIfMissing(AllocErmFunc);
+    FillIfMissing(ClearAllIniCache);
+    FillIfMissing(ClearIniCache);
+    FillIfMissing(DecorateInt);
+    FillIfMissing(EmptyIniCache);
+    FillIfMissing(ExecErmCmd);
+    FillIfMissing(ExecPersistedErmCmd);
+    FillIfMissing(ExtractErm);
+    FillIfMissing(FastQuitToGameMenu);
+    FillIfMissing(FatalError);
+    FillIfMissing(FindNextObject);
+    FillIfMissing(FireErmEvent);
+    FillIfMissing(FireEvent);
+    FillIfMissing(FormatQuantity);
+    FillIfMissing(FreeAppliedPatch);
+    FillIfMissing(GenerateDebugInfo);
+    FillIfMissing(GetAppliedPatchSize);
+    FillIfMissing(GetArgXVars);
+    FillIfMissing(GetAssocVarIntValue);
+    FillIfMissing(GetAssocVarStrValue);
+    FillIfMissing(GetButtonID);
+    FillIfMissing(GetCampaignFileName);
+    FillIfMissing(GetCampaignMapInd);
+    FillIfMissing(GetCodePage);
+    FillIfMissing(GetEraRegistryIntValue);
+    FillIfMissing(GetEraRegistryStrValue);
+    FillIfMissing(GetGameState);
+    FillIfMissing(GetLanguage);
+    FillIfMissing(GetMapFileName);
+    FillIfMissing(GetProcessGuid);
+    FillIfMissing(GetRealAddr);
+    FillIfMissing(GetRetXVars);
+    FillIfMissing(GetTriggerReadableName);
+    FillIfMissing(GetVersionNum);
+    FillIfMissing(GlobalRedirectFile);
+    FillIfMissing(Hash32);
+    FillIfMissing(IsCampaign);
+    FillIfMissing(IsCommanderId);
+    FillIfMissing(IsPatchOverwritten);
+    FillIfMissing(LoadImageAsPcx16);
+    FillIfMissing(LogMemoryState);
+    FillIfMissing(MemFree);
+    FillIfMissing(MergeIniWithDefault);
+    FillIfMissing(NameColor);
+    FillIfMissing(NameTrigger);
+    FillIfMissing(NotifyError);
+    FillIfMissing(PatchExists);
+    FillIfMissing(PcxPngExists);
+    FillIfMissing(PersistErmCmd);
+    FillIfMissing(PluginExists);
+    FillIfMissing(RandomRangeWithFreeParam);
+    FillIfMissing(ReadSavegameSection);
+    FillIfMissing(ReadStrFromIni);
+    FillIfMissing(RedirectFile);
+    FillIfMissing(RedirectMemoryBlock);
+    FillIfMissing(RegisterHandler);
+    FillIfMissing(RegisterMemoryConsumer);
+    FillIfMissing(ReloadErm);
+    FillIfMissing(ReloadLanguageData);
+    FillIfMissing(ReportPluginVersion);
+    FillIfMissing(RestartCurrentProcess);
+    FillIfMissing(RollbackAppliedPatch);
+    FillIfMissing(SaveIni);
+    FillIfMissing(SetAssocVarIntValue);
+    FillIfMissing(SetAssocVarStrValue);
+    FillIfMissing(SetCodePage);
+    FillIfMissing(SetEraRegistryIntValue);
+    FillIfMissing(SetEraRegistryStrValue);
+    FillIfMissing(SetIsCommanderIdFunc);
+    FillIfMissing(SetIsElixirOfLifeStackFunc);
+    FillIfMissing(SetLanguage);
+    FillIfMissing(SetMultiPurposeDlgHandler);
+    FillIfMissing(SetRegenerationAbility);
+    FillIfMissing(SetStdRegenerationEffect);
+    FillIfMissing(ShowErmError);
+    FillIfMissing(ShowMessage);
+    FillIfMissing(ShowMultiPurposeDlg);
+    FillIfMissing(SplitMix32);
+    FillIfMissing(ToStaticStr);
+    FillIfMissing(WriteLog);
+    FillIfMissing(WriteSavegameSection);
+    FillIfMissing(WriteStrToIni);
+    FillIfMissing(GetEraVersion);
+    FillIfMissing(_Hook);
+    FillIfMissing(_Splice);
+    FillIfMissing(_WriteAtCode);
+    FillIfMissing(_tr);
+}
+
+} // namespace Compat
+
+bool IsLegacyEra()
+{
+    Compat::Init();
+    return Compat::isLegacyEra;
+}
+
 std::string GetModuleFileName(HINSTANCE hInstance)
 {
     char buf[256];
@@ -140,11 +354,20 @@ std::string GetModuleFileName(HINSTANCE hInstance)
 
 void ConnectEra(HINSTANCE PluginDllHandle, const char *PluginName)
 {
+    Compat::Init();
+
     std::string finalPluginName = GetModuleFileName(PluginDllHandle);
 
     if (PluginName && *PluginName)
     {
         finalPluginName = PluginName;
+    }
+
+    if (Compat::isLegacyEra)
+    {
+        // 구버전 ERA: 플러그인 등록 기능 자체가 없으므로 등록 단계를 건너뜀
+        plugin = nullptr;
+        return;
     }
 
     plugin = CreatePlugin(finalPluginName.c_str());
@@ -157,26 +380,51 @@ void ConnectEra(HINSTANCE PluginDllHandle, const char *PluginName)
 
 void *Hook(void *Addr, THookHandler HandlerFunc, void **AppliedPatch, int MinCodeSize, THookType HookType)
 {
+    Compat::Init();
+
+    if (Compat::isLegacyEra)
+    {
+        return reinterpret_cast<Compat::TLegacyHook>(_Hook)(Addr, HandlerFunc, AppliedPatch, MinCodeSize, HookType);
+    }
+
     return _Hook(plugin, Addr, HandlerFunc, AppliedPatch, MinCodeSize, HookType);
 }
 
 void *Splice(void *OrigFunc, void *HandlerFunc, int CallingConv, int NumArgs, int *CustomParam, void **AppliedPatch)
 {
+    Compat::Init();
+
+    if (Compat::isLegacyEra)
+    {
+        return reinterpret_cast<Compat::TLegacySplice>(_Splice)(OrigFunc, HandlerFunc, CallingConv, NumArgs,
+                                                               CustomParam, AppliedPatch);
+    }
+
     return _Splice(plugin, OrigFunc, HandlerFunc, CallingConv, NumArgs, CustomParam, AppliedPatch);
 }
 
 bool WriteAtCode(int Count, void *Src, void *Dst)
 {
+    Compat::Init();
+
+    if (Compat::isLegacyEra)
+    {
+        return reinterpret_cast<Compat::TLegacyWriteAtCode>(_WriteAtCode)(Count, Src, Dst);
+    }
+
     return _WriteAtCode(plugin, Count, Src, Dst);
 }
 
 static_str tr(const char *key)
 {
+    Compat::Init();
     return trStatic(key);
 }
 
 std::string tr(const char *key, const std::vector<std::string> &params)
 {
+    Compat::Init();
+
     constexpr int MAX_PARAMS = 64;
 
     const char *_params[MAX_PARAMS]{};
@@ -224,7 +472,6 @@ void SetPcharValue(char *Buf, const char *NewValue, int BufSize)
 // [수정] era.dll 에 메모리 관리 기능이 없는 구버전 ERA 에서는 기본 malloc/free 로 자동 대체.
 #ifdef _MSC_VER
 #ifdef _MT
-#include <cstdlib>
 namespace EraMemory
 {
 
@@ -256,7 +503,7 @@ void InitMemoryManager()
 
         if (!hEra)
         {
-            return; // era.dll 이 없으면 기본 메모리 관리자 사용
+            return;
         }
 
         _ClientMemAlloc = reinterpret_cast<decltype(_ClientMemAlloc)>(GetProcAddress(hEra, "_ClientMemAlloc"));
@@ -267,7 +514,6 @@ void InitMemoryManager()
 
         if (!_ClientMemAlloc || !_ClientMemFree || !RegisterMemoryConsumer)
         {
-            // 구버전 ERA: 기능이 하나라도 없으면 전부 기본 방식으로 통일
             _ClientMemAlloc = nullptr;
             _ClientMemFree = nullptr;
             _ClientMemRealloc = nullptr;
