@@ -23,8 +23,48 @@ void CreatureDlgHandler::HideDefaultBattleSpellItems()
             item->HideDeactivate();
 }
 
+// [추가] ERM 템플릿(Stackinfo_0.txt)의 상태, 마법횟수, 여분발사횟수를 C++ 대화창에 생성 및 연동하는 함수
+void CreatureDlgHandler::AddCustomStats()
+{
+    if (!dlg || !stack)
+        return;
+
+    // 1. 상태 (Status) - Y: 48
+    auto *statusLabel = H3DlgText::Create(311, 48, 110, 17, Era::tr("eci.combat_dialog.custom.status_label"), P_MedFont->GetName(), eTextColor::WHITE, 111, eTextAlignment::TOP_LEFT);
+    if (statusLabel) dlg->AddItem(statusLabel);
+
+    const char* statusStr = Era::tr("eci.combat_dialog.status.active");
+    if (stack->IsWaiting()) statusStr = Era::tr("eci.combat_dialog.status.wait");
+    else if (stack->IsDefending()) statusStr = Era::tr("eci.combat_dialog.status.defend");
+    else if (stack->IsDone()) statusStr = Era::tr("eci.combat_dialog.status.done");
+
+    auto *statusVal = H3DlgText::Create(311, 48, 118, 17, statusStr, P_SmalFont->GetName(), eTextColor::WHITE, 211, eTextAlignment::TOP_RIGHT);
+    if (statusVal) dlg->AddItem(statusVal);
+
+    // 2. 마법횟수 (Spell Charges) - Y: 67
+    auto *spellLabel = H3DlgText::Create(311, 67, 110, 17, Era::tr("eci.combat_dialog.custom.spell_label"), P_MedFont->GetName(), eTextColor::WHITE, 110, eTextAlignment::TOP_LEFT);
+    if (spellLabel) dlg->AddItem(spellLabel);
+
+    char spellBuf[16];
+    std::snprintf(spellBuf, sizeof(spellBuf), "%d", stack->info.spellCharges);
+    auto *spellVal = H3DlgText::Create(311, 67, 118, 17, spellBuf, P_SmalFont->GetName(), eTextColor::WHITE, 210, eTextAlignment::TOP_RIGHT);
+    if (spellVal) dlg->AddItem(spellVal);
+
+    // 3. 여분발사횟수 (Extra Shots) - Y: 86 (사격 유닛인 경우만 표시)
+    if (stack->info.shooter)
+    {
+        auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, Era::tr("eci.combat_dialog.custom.shot_label"), P_MedFont->GetName(), eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
+        if (shotLabel) dlg->AddItem(shotLabel);
+
+        char shotBuf[16];
+        std::snprintf(shotBuf, sizeof(shotBuf), "%d", stack->info.numberShots);
+        auto *shotVal = H3DlgText::Create(311, 86, 118, 17, shotBuf, P_SmalFont->GetName(), eTextColor::WHITE, 204, eTextAlignment::TOP_RIGHT);
+        if (shotVal) dlg->AddItem(shotVal);
+    }
+}
+
 CreatureDlgHandler::CreatureDlgHandler(H3CreatureInfoDlg *dlg, H3CombatCreature *stack, H3Army *army, int armySlotIndex,
-                                       const H3Hero *hero, int playerColor)
+                                     const H3Hero *hero, int playerColor)
     : dlg(dlg), stack(stack), army(army), armySlotIndex(armySlotIndex), wogStackExperience(WogStackExperienceEnabled()),
       hero(hero), playerColor(playerColor)
 {
@@ -36,6 +76,10 @@ CreatureDlgHandler::CreatureDlgHandler(H3CreatureInfoDlg *dlg, H3CombatCreature 
     if (GetPluginSettings().showCommanderSkills)
         AddCommanderSkills();
     AlignItems();
+    
+    // 대화창에 커스텀 통계(상태, 마법횟수, 여분발사횟수) 추가 호출
+    AddCustomStats();
+
     if (wogStackExperience && dlg->GetDefButton(DLG_OK_ID))
         AddExperienceButton();
     if (stack)
@@ -230,7 +274,7 @@ BOOL CreatureDlgHandler::AddExperienceButton()
     if (!button)
         return FALSE;
     const char *hint = isNpc ? Era::tr("eci.combat_dialog.creature_info.npc_hint")
-                          : Era::tr("eci.combat_dialog.creature_info.stack_exp_hint");
+                             : Era::tr("eci.combat_dialog.creature_info.stack_exp_hint");
     button->SetHints(hint, h3_NullString, true);
     dlg->AddItem(button);
     return TRUE;
@@ -248,7 +292,7 @@ BOOL CreatureDlgHandler::AddSpellEffects()
         const int spellId = spells.ids[row];
         const int y = SPELL_COLUMN_Y + row * SPELL_ROW_HEIGHT;
         auto *icon = H3DlgDef::Create(SPELL_COLUMN_X, y, DLG_SPELL_FIRST_ID + row,
-                                    NH3Dlg::Assets::SPELL_SMALL, spellId + SPELL_DEF_FRAME_OFFSET);
+                                      NH3Dlg::Assets::SPELL_SMALL, spellId + SPELL_DEF_FRAME_OFFSET);
         if (!icon)
             continue;
         SetCreatureSpellHints(icon, stack, spellId);
@@ -258,10 +302,10 @@ BOOL CreatureDlgHandler::AddSpellEffects()
             char duration[SPELL_DURATION_BUFFER_SIZE];
             std::snprintf(duration, sizeof(duration), "x%d", stack->activeSpellDuration[spellId]);
             auto *text = H3DlgText::Create(icon->GetX() + icon->GetWidth() - SPELL_DURATION_WIDTH,
-                                          icon->GetY() + icon->GetHeight() - SPELL_DURATION_HEIGHT,
-                                          SPELL_DURATION_WIDTH, SPELL_DURATION_HEIGHT, duration, NH3Dlg::Text::TINY,
-                                          eTextColor::WHITE, DLG_SPELL_DURATION_FIRST_ID + row,
-                                          eTextAlignment::BOTTOM_RIGHT);
+                                         icon->GetY() + icon->GetHeight() - SPELL_DURATION_HEIGHT,
+                                         SPELL_DURATION_WIDTH, SPELL_DURATION_HEIGHT, duration, NH3Dlg::Text::TINY,
+                                         eTextColor::WHITE, DLG_SPELL_DURATION_FIRST_ID + row,
+                                         eTextAlignment::BOTTOM_RIGHT);
             if (text)
             {
                 SetCreatureSpellHints(text, stack, spellId);
@@ -272,7 +316,7 @@ BOOL CreatureDlgHandler::AddSpellEffects()
     if (needButton)
     {
         auto *button = H3DlgDefButton::Create(SPELL_COLUMN_X, SPELL_COLUMN_Y + visibleCount * SPELL_ROW_HEIGHT,
-                                             DLG_SPELLS_BTTN_ID, SPELL_LIST_BUTTON_DEF, 0, 1, false, eVKey::H3VK_S);
+                                              DLG_SPELLS_BTTN_ID, SPELL_LIST_BUTTON_DEF, 0, 1, false, eVKey::H3VK_S);
         if (button)
         {
             button->SetHints(Era::tr("eci.combat_dialog.creature_info.spell_list_hint"), h3_NullString, true);
