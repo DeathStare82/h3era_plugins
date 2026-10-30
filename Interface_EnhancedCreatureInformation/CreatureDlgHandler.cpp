@@ -130,19 +130,12 @@ void CreatureDlgHandler::AddCustomStats()
         auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, shotLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
         if (shotLabel) dlg->AddItem(shotLabel);
 
+        // stack 객체 고유 속성(예: stack->GetStackIndex() 등) 또는 인덱스 활용
         int extraShots = 0;
-        if (P_CombatManager)
+        int stackIndex = armySlotIndex; // 생성자에 전달된 slot index 활용 예시
+        if (stackIndex >= 0 && stackIndex < 42)
         {
-            // stack 객체 구조체 내부에서 자신전장의 고유 인덱스나 번호 추출 또는 안전한 탐색 수행
-            for (int i = 0; i < 42; ++i)
-            {
-                H3CombatCreature* combatStack = P_CombatManager->GetActiveCreature(i);
-                if (combatStack == stack)
-                {
-                    extraShots = Era::v[942 + i];
-                    break;
-                }
-            }
+            extraShots = Era::v[942 + stackIndex];
         }
 
         char shotBuf[16];
@@ -151,7 +144,7 @@ void CreatureDlgHandler::AddCustomStats()
         if (shotVal) dlg->AddItem(shotVal);
     }
 
-    // 4. 전투력 및 보조마법 지속시간 문구 (ERM z/v 변수 직접 연결)
+    // 4. 전투력 및 보조마법 지속시간 문구 (ERM z 변수 직접 연결)
     const char* fightText = Era::z[5]; 
     if (fightText && *fightText)
     {
