@@ -9,9 +9,71 @@
 #include <algorithm>
 #include <string>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
+#include <map>
 
 using namespace h3;
 using namespace creatureInfo;
+
+// ERT 파일의 데이터를 담을 전역 맵
+static std::map<int, std::string> g_ertStrings;
+static bool g_isErtLoaded = false;
+
+// .ert 파일 직접 파싱 함수 (탭으로 구분된 ID와 텍스트를 읽어옵니다)
+void LoadErtFile(const std::string& filePath)
+{
+    if (g_isErtLoaded)
+        return;
+
+    std::ifstream file(filePath);
+    if (!file.is_open())
+        return;
+
+    std::string line;
+    while (std::getline(file, line))
+    {
+        if (line.empty() || line[0] == '#' || line[0] == ';')
+            continue;
+
+        std::stringstream ss(line);
+        int id;
+        if (ss >> id)
+        {
+            std::string text;
+            std::getline(ss, text);
+            // 앞쪽 공백이나 탭 제거
+            size_t startPos = text.find_first_not_of(" \t\r\n");
+            if (startPos != std::string::npos)
+            {
+                text = text.substr(startPos);
+            }
+            else
+            {
+                text = "";
+            }
+            g_ertStrings[id] = text;
+        }
+    }
+    g_isErtLoaded = true;
+}
+
+// ERT ID로 텍스트를 가져오는 헬퍼 함수 (없으면 기본값 반환)
+std::string GetErtText(int id, const std::string& fallback)
+{
+    // 필요에 따라 ERT 파일 경로를 수정할 수 있습니다 (예: "Data/s/your_file.ert")
+    if (!g_isErtLoaded)
+    {
+        LoadErtFile("Data/s/text.ert"); // 실제 사용하는 .ert 파일 경로로 지정해주세요
+    }
+
+    auto it = g_ertStrings.find(id);
+    if (it != g_ertStrings.end())
+    {
+        return it->second;
+    }
+    return fallback;
+}
 
 void CreatureDlgHandler::HideDefaultBattleSpellItems()
 {
@@ -23,26 +85,30 @@ void CreatureDlgHandler::HideDefaultBattleSpellItems()
             item->HideDeactivate();
 }
 
-// [수정 완료] 상태, 마법횟수, 여분발사횟수를 대화창에 생성 및 연동하는 멤버 함수
+// ERT 파일과 연동하여 상태, 마법횟수, 여분발사횟수를 대화창에 표시하는 함수
 void CreatureDlgHandler::AddCustomStats()
 {
     if (!dlg || !stack)
         return;
 
     // 1. 상태 (Status) - Y: 48
-    auto *statusLabel = H3DlgText::Create(311, 48, 110, 17, Era::tr("eci.combat_dialog.custom.status_label"), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 111, eTextAlignment::TOP_LEFT);
+    auto *statusLabel = H3DlgText::Create(311, 48, 110, 17, "{~White}상태{~}", NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 111, eTextAlignment::TOP_LEFT);
     if (statusLabel) dlg->AddItem(statusLabel);
 
-    Era::static_str statusStr = Era::tr("eci.combat_dialog.status.active");
-    if (stack->IsWaiting()) statusStr = Era::tr("eci.combat_dialog.status.wait");
-    else if (stack->IsDefending()) statusStr = Era::tr("eci.combat_dialog.status.defend");
-    else if (stack->IsDone()) statusStr = Era::tr("eci.combat_dialog.status.done");
+    // ERT 번호 연동 (202714: 행동 전, 202715: 대기중, 202717: 행동 끝 (방어), 202716: 행동 끝)
+    std::string statusText = GetErtText(202714, "행동 전");
+    if (stack->IsWaiting())
+        statusText = GetErtText(202715, "대기중");
+    else if (stack->IsDefending())
+        statusText = GetErtText(202717, "행동 끝 (방어)");
+    else if (stack->IsDone())
+        statusText = GetErtText(202716, "행동 끝");
 
-    auto *statusVal = H3DlgText::Create(311, 48, 118, 17, statusStr, NH3Dlg::Text::SMALL, eTextColor::WHITE, 211, eTextAlignment::TOP_RIGHT);
+    auto *statusVal = H3DlgText::Create(311, 48, 118, 17, statusText.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 211, eTextAlignment::TOP_RIGHT);
     if (statusVal) dlg->AddItem(statusVal);
 
     // 2. 마법횟수 (Spell Charges) - Y: 67
-    auto *spellLabel = H3DlgText::Create(311, 67, 110, 17, Era::tr("eci.combat_dialog.custom.spell_label"), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 110, eTextAlignment::TOP_LEFT);
+    auto *spellLabel = H3DlgText::Create(311, 67, 110, 17, "{~White}마법횟수{~}", NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 110, eTextAlignment::TOP_LEFT);
     if (spellLabel) dlg->AddItem(spellLabel);
 
     char spellBuf[16];
@@ -53,11 +119,29 @@ void CreatureDlgHandler::AddCustomStats()
     // 3. 여분발사횟수 (Extra Shots) - Y: 86 (사격 유닛인 경우만 표시)
     if (stack->info.shooter)
     {
-        auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, Era::tr("eci.combat_dialog.custom.shot_label"), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
+        auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, "{~White}여분발사횟수{~}", NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
         if (shotLabel) dlg->AddItem(shotLabel);
 
+        int extraShots = 0;
+        if (P_CombatManager)
+        {
+            int stackIndex = -1;
+            for (int i = 0; i < 42; ++i)
+            {
+                if (P_CombatManager->GetStack(i) == stack)
+                {
+                    stackIndex = i;
+                    break;
+                }
+            }
+            if (stackIndex >= 0 && stackIndex < 42)
+            {
+                extraShots = Era::v[942 + stackIndex];
+            }
+        }
+
         char shotBuf[16];
-        std::snprintf(shotBuf, sizeof(shotBuf), "%d", stack->info.numberShots);
+        std::snprintf(shotBuf, sizeof(shotBuf), "%d", extraShots);
         auto *shotVal = H3DlgText::Create(311, 86, 118, 17, shotBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 204, eTextAlignment::TOP_RIGHT);
         if (shotVal) dlg->AddItem(shotVal);
     }
@@ -77,7 +161,6 @@ CreatureDlgHandler::CreatureDlgHandler(H3CreatureInfoDlg *dlg, H3CombatCreature 
         AddCommanderSkills();
     AlignItems();
     
-    // 대화창에 커스텀 통계(상태, 마법횟수, 여분발사횟수) 추가 호출
     AddCustomStats();
 
     if (wogStackExperience && dlg->GetDefButton(DLG_OK_ID))
