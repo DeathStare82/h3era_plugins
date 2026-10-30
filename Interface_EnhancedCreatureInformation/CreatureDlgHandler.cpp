@@ -26,7 +26,7 @@ void LoadErtFile()
     if (g_isErtLoaded)
         return;
 
-    std::ifstream file("Data/s/text.ert"); // 실제 사용 중인 .ert 경로
+    std::ifstream file("Data/s/text.ert");
     if (!file.is_open())
     {
         file.open("text.ert");
@@ -123,7 +123,7 @@ void CreatureDlgHandler::AddCustomStats()
     auto *spellVal = H3DlgText::Create(311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 210, eTextAlignment::TOP_RIGHT);
     if (spellVal) dlg->AddItem(spellVal);
 
-    // 3. 여분발사횟수 (ERT 202757 / ERM v942+i 연동)
+    // 3. 여분발사횟수 (ERT 202757 / ERM v변수 연동)
     if (stack->info.shooter)
     {
         std::string shotLabelText = GetErtText(202757, "{~White}여분발사횟수{~}");
@@ -133,9 +133,10 @@ void CreatureDlgHandler::AddCustomStats()
         int extraShots = 0;
         if (P_CombatManager)
         {
+            // stack 객체 구조체 내부에서 자신전장의 고유 인덱스나 번호 추출 또는 안전한 탐색 수행
             for (int i = 0; i < 42; ++i)
             {
-                H3CombatCreature* combatStack = P_CombatManager->st[i]; // <- 에러 원인 (st 멤버 없음)
+                H3CombatCreature* combatStack = P_CombatManager->GetActiveCreature(i);
                 if (combatStack == stack)
                 {
                     extraShots = Era::v[942 + i];
@@ -151,7 +152,6 @@ void CreatureDlgHandler::AddCustomStats()
     }
 
     // 4. 전투력 및 보조마법 지속시간 문구 (ERM z/v 변수 직접 연결)
-    // ERM에서 z5에 완성된 텍스트("전투력: 2760 (아스리우스(이)가 보조마법 사용 시...")를 담아둔 경우:
     const char* fightText = Era::z[5]; 
     if (fightText && *fightText)
     {
@@ -305,7 +305,6 @@ BOOL CreatureDlgHandler::AlignItems()
     return BuildDescriptionArea();
 }
 
-// 특수능력 타이틀 삽입 및 본문 위치 조정
 BOOL CreatureDlgHandler::BuildDescriptionArea()
 {
     ResetExperienceSkillsPanel();
@@ -323,7 +322,6 @@ BOOL CreatureDlgHandler::BuildDescriptionArea()
 
     ReleaseUnownedSkillImages();
     
-    // Y 좌표 조정: 특수능력 타이틀을 Y: 240 부근에 두고, 본문을 Y: 255 아래로 배치
     const int customDescY = 255;
     const int availableHeight = std::max(100, CONTENT_BOTTOM - customDescY);
 
