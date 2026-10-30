@@ -125,17 +125,22 @@ void CreatureDlgHandler::AddCustomStats()
 
     // 3. 여분발사횟수 (ERT 202757 / ERM v변수 연동)
     if (stack->info.shooter)
-    {
+{
         std::string shotLabelText = GetErtText(202757, "{~White}여분발사횟수{~}");
         auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, shotLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
         if (shotLabel) dlg->AddItem(shotLabel);
 
-        // stack 객체 고유 속성(예: stack->GetStackIndex() 등) 또는 인덱스 활용
         int extraShots = 0;
-        int stackIndex = armySlotIndex; // 생성자에 전달된 slot index 활용 예시
-        if (stackIndex >= 0 && stackIndex < 42)
+        if (auto *combatMgr = H3CombatManager::Get())
         {
-            extraShots = Era::v[942 + stackIndex];
+            for (int i = 0; i < 42; ++i)
+            {
+                if (combatMgr->GetStack(i) == stack)
+                {
+                    extraShots = Era::v[942 + i];
+                    break;
+                }
+            }
         }
 
         char shotBuf[16];
@@ -334,7 +339,7 @@ BOOL CreatureDlgHandler::BuildDescriptionArea()
     // '특수능력:' 라벨 추가 (ERT 202758 사용)
     std::string specTitle = GetErtText(202758, "{~White}특수능력:{~}");
     auto *specLabel = H3DlgText::Create(descriptionX, customDescY - 15, descriptionWidth, 15, 
-                                        specTitle.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 301, eTextAlignment::TOP_LEFT);
+                                        specTitle.c_str(), NH3Dlg::Text::TINY, eTextColor::WHITE, 301, eTextAlignment::TOP_LEFT);
     if (specLabel) dlg->AddItem(specLabel);
 
     if (description)
