@@ -26,10 +26,10 @@ void LoadErtFile()
     if (g_isErtLoaded)
         return;
 
-    std::ifstream file("Data/s/text.ert");
+    std::ifstream file("Data/s/The Multiverse - 10. Hint.ert");
     if (!file.is_open())
     {
-        file.open("text.ert");
+        file.open("The Multiverse - 10. Hint.ert");
     }
 
     if (!file.is_open())
