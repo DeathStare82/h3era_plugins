@@ -20,15 +20,23 @@ using namespace creatureInfo;
 static std::map<int, std::string> g_ertStrings;
 static bool g_isErtLoaded = false;
 
-// .ert 파일 직접 파싱 함수 (탭으로 구분된 ID와 텍스트를 읽어옵니다)
-void LoadErtFile(const std::string& filePath)
+// .ert 파일 파싱
+void LoadErtFile()
 {
     if (g_isErtLoaded)
         return;
 
-    std::ifstream file(filePath);
+    std::ifstream file("Data/s/text.ert"); // 실제 사용 중인 .ert 경로
     if (!file.is_open())
+    {
+        file.open("text.ert");
+    }
+
+    if (!file.is_open())
+    {
+        g_isErtLoaded = true;
         return;
+    }
 
     std::string line;
     while (std::getline(file, line))
@@ -42,7 +50,7 @@ void LoadErtFile(const std::string& filePath)
         {
             std::string text;
             std::getline(ss, text);
-            // 앞쪽 공백이나 탭 제거
+            
             size_t startPos = text.find_first_not_of(" \t\r\n");
             if (startPos != std::string::npos)
             {
@@ -58,13 +66,11 @@ void LoadErtFile(const std::string& filePath)
     g_isErtLoaded = true;
 }
 
-// ERT ID로 텍스트를 가져오는 헬퍼 함수 (없으면 기본값 반환)
-std::string GetErtText(int id, const std::string& fallback)
+std::string GetErtText(int id, const std::string& fallback = "")
 {
-    // 필요에 따라 ERT 파일 경로를 수정할 수 있습니다 (예: "Data/s/your_file.ert")
     if (!g_isErtLoaded)
     {
-        LoadErtFile("Data/s/text.ert"); // 실제 사용하는 .ert 파일 경로로 지정해주세요
+        LoadErtFile();
     }
 
     auto it = g_ertStrings.find(id);
@@ -85,17 +91,17 @@ void CreatureDlgHandler::HideDefaultBattleSpellItems()
             item->HideDeactivate();
 }
 
-// ERT 파일과 연동하여 상태, 마법횟수, 여분발사횟수를 대화창에 표시하는 함수
+// 상태, 마법횟수, 여분발사횟수 및 ERM 연동 전투력/지속시간 추가
 void CreatureDlgHandler::AddCustomStats()
 {
     if (!dlg || !stack)
         return;
 
-    // 1. 상태 (Status) - Y: 48
-    auto *statusLabel = H3DlgText::Create(311, 48, 110, 17, "{~White}상태{~}", NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 111, eTextAlignment::TOP_LEFT);
+    // 1. 상태 (ERT 202755 / 202714~202717)
+    std::string statusLabelText = GetErtText(202755, "{~White}상태{~}");
+    auto *statusLabel = H3DlgText::Create(311, 48, 110, 17, statusLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 111, eTextAlignment::TOP_LEFT);
     if (statusLabel) dlg->AddItem(statusLabel);
 
-    // ERT 번호 연동 (202714: 행동 전, 202715: 대기중, 202717: 행동 끝 (방어), 202716: 행동 끝)
     std::string statusText = GetErtText(202714, "행동 전");
     if (stack->IsWaiting())
         statusText = GetErtText(202715, "대기중");
@@ -107,8 +113,9 @@ void CreatureDlgHandler::AddCustomStats()
     auto *statusVal = H3DlgText::Create(311, 48, 118, 17, statusText.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 211, eTextAlignment::TOP_RIGHT);
     if (statusVal) dlg->AddItem(statusVal);
 
-    // 2. 마법횟수 (Spell Charges) - Y: 67
-    auto *spellLabel = H3DlgText::Create(311, 67, 110, 17, "{~White}마법횟수{~}", NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 110, eTextAlignment::TOP_LEFT);
+    // 2. 마법횟수 (ERT 202756)
+    std::string spellLabelText = GetErtText(202756, "{~White}마법횟수{~}");
+    auto *spellLabel = H3DlgText::Create(311, 67, 110, 17, spellLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 110, eTextAlignment::TOP_LEFT);
     if (spellLabel) dlg->AddItem(spellLabel);
 
     char spellBuf[16];
@@ -116,27 +123,24 @@ void CreatureDlgHandler::AddCustomStats()
     auto *spellVal = H3DlgText::Create(311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 210, eTextAlignment::TOP_RIGHT);
     if (spellVal) dlg->AddItem(spellVal);
 
-    // 3. 여분발사횟수 (Extra Shots) - Y: 86 (사격 유닛인 경우만 표시)
+    // 3. 여분발사횟수 (ERT 202757 / ERM v942+i 연동)
     if (stack->info.shooter)
     {
-        auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, "{~White}여분발사횟수{~}", NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
+        std::string shotLabelText = GetErtText(202757, "{~White}여분발사횟수{~}");
+        auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, shotLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
         if (shotLabel) dlg->AddItem(shotLabel);
 
         int extraShots = 0;
         if (P_CombatManager)
         {
-            int stackIndex = -1;
             for (int i = 0; i < 42; ++i)
             {
-                if (P_CombatManager->GetStack(i) == stack)
+                H3CombatCreature* combatStack = P_CombatManager->st[i];
+                if (combatStack == stack)
                 {
-                    stackIndex = i;
+                    extraShots = Era::v[942 + i];
                     break;
                 }
-            }
-            if (stackIndex >= 0 && stackIndex < 42)
-            {
-                extraShots = Era::v[942 + stackIndex];
             }
         }
 
@@ -144,6 +148,15 @@ void CreatureDlgHandler::AddCustomStats()
         std::snprintf(shotBuf, sizeof(shotBuf), "%d", extraShots);
         auto *shotVal = H3DlgText::Create(311, 86, 118, 17, shotBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 204, eTextAlignment::TOP_RIGHT);
         if (shotVal) dlg->AddItem(shotVal);
+    }
+
+    // 4. 전투력 및 보조마법 지속시간 문구 (ERM z/v 변수 직접 연결)
+    // ERM에서 z5에 완성된 텍스트("전투력: 2760 (아스리우스(이)가 보조마법 사용 시...")를 담아둔 경우:
+    const char* fightText = Era::z[5]; 
+    if (fightText && *fightText)
+    {
+        auto *fightVal = H3DlgText::Create(17, 208, 280, 28, fightText, NH3Dlg::Text::TINY, eTextColor::WHITE, 300, eTextAlignment::TOP_LEFT);
+        if (fightVal) dlg->AddItem(fightVal);
     }
 }
 
@@ -292,6 +305,7 @@ BOOL CreatureDlgHandler::AlignItems()
     return BuildDescriptionArea();
 }
 
+// 특수능력 타이틀 삽입 및 본문 위치 조정
 BOOL CreatureDlgHandler::BuildDescriptionArea()
 {
     ResetExperienceSkillsPanel();
@@ -308,20 +322,29 @@ BOOL CreatureDlgHandler::BuildDescriptionArea()
     }
 
     ReleaseUnownedSkillImages();
-    const int availableHeight = std::max(descriptionHeight, CONTENT_BOTTOM - descriptionY);
+    
+    // Y 좌표 조정: 특수능력 타이틀을 Y: 240 부근에 두고, 본문을 Y: 255 아래로 배치
+    const int customDescY = 255;
+    const int availableHeight = std::max(100, CONTENT_BOTTOM - customDescY);
+
+    // '특수능력:' 라벨 추가 (ERT 202758 사용)
+    std::string specTitle = GetErtText(202758, "{~White}특수능력:{~}");
+    auto *specLabel = H3DlgText::Create(descriptionX, customDescY - 15, descriptionWidth, 15, 
+                                        specTitle.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 301, eTextAlignment::TOP_LEFT);
+    if (specLabel) dlg->AddItem(specLabel);
 
     if (description)
     {
         description->SetWidth(descriptionWidth);
         description->SetHeight(availableHeight);
         description->SetX(descriptionX);
-        description->SetY(descriptionY);
+        description->SetY(customDescY);
         description->ShowActivate();
     }
     else if (!descriptionText.empty())
     {
         description =
-            H3DlgText::Create(descriptionX, descriptionY, descriptionWidth, availableHeight, descriptionText.c_str(),
+            H3DlgText::Create(descriptionX, customDescY, descriptionWidth, availableHeight, descriptionText.c_str(),
                               NH3Dlg::Text::TINY, eTextColor::WHITE, DLG_DESCRIPTION_ID, eTextAlignment::TOP_LEFT);
         if (description)
             dlg->AddItem(description);
