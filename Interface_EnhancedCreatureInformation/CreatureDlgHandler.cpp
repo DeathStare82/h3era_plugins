@@ -200,6 +200,19 @@ void CreatureDlgHandler::ApplyDialogAppearance()
         if (playerColor >= 0 && playerColor < limits::PLAYERS)
             background->AdjustColor(playerColor);
     }
+
+    // =========================================================
+    // [추가] 유닛 메인 DEF 스프라이트 X좌표를 왼쪽으로 1px 이동
+    // =========================================================
+    // H3CreatureInfoDlg의 원본 유닛 Def 아이템(보통 ID 27 또는 0번 Def) 위치 조정
+    if (auto *unitDef = dlg->GetDef(27)) // 원본 대화창의 유닛 DEF ID
+    {
+        unitDef->SetX(unitDef->GetX() - 1);
+    }
+    else if (auto *unitDefFallback = dlg->GetDef(0))
+    {
+        unitDefFallback->SetX(unitDefFallback->GetX() - 1);
+    }
 }
 
 void CreatureDlgHandler::ScrollTo(int scrollTick)
