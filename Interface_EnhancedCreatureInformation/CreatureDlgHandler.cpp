@@ -135,7 +135,7 @@ void CreatureDlgHandler::AddCustomStats()
         {
             for (int i = 0; i < 42; ++i)
             {
-                H3CombatCreature* combatStack = P_CombatManager->st[i];
+                H3CombatCreature* combatStack = P_CombatManager->st[i]; // <- 에러 원인 (st 멤버 없음)
                 if (combatStack == stack)
                 {
                     extraShots = Era::v[942 + i];
