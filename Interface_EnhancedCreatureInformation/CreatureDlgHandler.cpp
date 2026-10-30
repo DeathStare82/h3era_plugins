@@ -125,7 +125,7 @@ void CreatureDlgHandler::AddCustomStats()
 
     // 3. 여분발사횟수 (ERT 202757 / ERM v변수 연동)
     if (stack->info.shooter)
-{
+    {
         std::string shotLabelText = GetErtText(202757, "{~White}여분발사횟수{~}");
         auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, shotLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
         if (shotLabel) dlg->AddItem(shotLabel);
@@ -135,7 +135,8 @@ void CreatureDlgHandler::AddCustomStats()
         {
             for (int i = 0; i < 42; ++i)
             {
-                if (combatMgr->GetStack(i) == stack)
+                // GetStack 대신 H3API 표준 멤버인 combatMonsters 배열을 통해 스택 포인터 비교
+                if (combatMgr->combatMonsters[i] == stack)
                 {
                     extraShots = Era::v[942 + i];
                     break;
