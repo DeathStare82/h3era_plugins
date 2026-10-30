@@ -1,4 +1,4 @@
-ï»¿#include "pch.h"
+#include "pch.h"
 
 #include "CreatureDlgHandler.h"
 #include "CreatureDlgHooks.h"
@@ -16,11 +16,11 @@
 using namespace h3;
 using namespace creatureInfo;
 
-// ERT íŒŒì¼ì˜ ë°ì´í„°ë¥¼ ë‹´ì„ ì „ì—­ ë§µ
+// ERT ÆÄÀÏÀÇ µ¥ÀÌÅÍ¸¦ ´ãÀ» Àü¿ª ¸Ê
 static std::map<int, std::string> g_ertStrings;
 static bool g_isErtLoaded = false;
 
-// .ert íŒŒì¼ íŒŒì‹±
+// .ert ÆÄÀÏ ÆÄ½Ì
 void LoadErtFile()
 {
     if (g_isErtLoaded)
@@ -91,30 +91,30 @@ void CreatureDlgHandler::HideDefaultBattleSpellItems()
             item->HideDeactivate();
 }
 
-// ìƒíƒœ, ë§ˆë²•íšŸìˆ˜, ì—¬ë¶„ë°œì‚¬íšŸìˆ˜ ë° ERM ì—°ë™ ì „íˆ¬ë ¥/ì§€ì†ì‹œê°„ ì¶”ê°€
+// »óÅÂ, ¸¶¹ıÈ½¼ö, ¿©ºĞ¹ß»çÈ½¼ö ¹× ERM ¿¬µ¿ ÀüÅõ·Â/Áö¼Ó½Ã°£ Ãß°¡
 void CreatureDlgHandler::AddCustomStats()
 {
     if (!dlg || !stack)
         return;
 
-    // 1. ìƒíƒœ (ERT 202755 / 202714~202717)
-    std::string statusLabelText = GetErtText(202755, "{~White}ìƒíƒœ{~}");
+    // 1. »óÅÂ (ERT 202755 / 202714~202717)
+    std::string statusLabelText = GetErtText(202755, "{~White}»óÅÂ{~}");
     auto *statusLabel = H3DlgText::Create(311, 48, 110, 17, statusLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 111, eTextAlignment::TOP_LEFT);
     if (statusLabel) dlg->AddItem(statusLabel);
 
-    std::string statusText = GetErtText(202714, "í–‰ë™ ì „");
+    std::string statusText = GetErtText(202714, "Çàµ¿ Àü");
     if (stack->IsWaiting())
-        statusText = GetErtText(202715, "ëŒ€ê¸°ì¤‘");
+        statusText = GetErtText(202715, "´ë±âÁß");
     else if (stack->IsDefending())
-        statusText = GetErtText(202717, "í–‰ë™ ë (ë°©ì–´)");
+        statusText = GetErtText(202717, "Çàµ¿ ³¡ (¹æ¾î)");
     else if (stack->IsDone())
-        statusText = GetErtText(202716, "í–‰ë™ ë");
+        statusText = GetErtText(202716, "Çàµ¿ ³¡");
 
     auto *statusVal = H3DlgText::Create(311, 48, 118, 17, statusText.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 211, eTextAlignment::TOP_RIGHT);
     if (statusVal) dlg->AddItem(statusVal);
 
-    // 2. ë§ˆë²•íšŸìˆ˜ (ERT 202756)
-    std::string spellLabelText = GetErtText(202756, "{~White}ë§ˆë²•íšŸìˆ˜{~}");
+    // 2. ¸¶¹ıÈ½¼ö (ERT 202756)
+    std::string spellLabelText = GetErtText(202756, "{~White}¸¶¹ıÈ½¼ö{~}");
     auto *spellLabel = H3DlgText::Create(311, 67, 110, 17, spellLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 110, eTextAlignment::TOP_LEFT);
     if (spellLabel) dlg->AddItem(spellLabel);
 
@@ -123,16 +123,16 @@ void CreatureDlgHandler::AddCustomStats()
     auto *spellVal = H3DlgText::Create(311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 210, eTextAlignment::TOP_RIGHT);
     if (spellVal) dlg->AddItem(spellVal);
 
-    // 3. ì—¬ë¶„ë°œì‚¬íšŸìˆ˜ (ERT 202757 / ERM vë³€ìˆ˜ ì—°ë™)
+    // 3. ¿©ºĞ¹ß»çÈ½¼ö (ERT 202757 / ERM vº¯¼ö ¿¬µ¿)
     if (stack->info.shooter)
     {
-        std::string shotLabelText = GetErtText(202757, "{~White}ì—¬ë¶„ë°œì‚¬íšŸìˆ˜{~}");
+        std::string shotLabelText = GetErtText(202757, "{~White}¿©ºĞ¹ß»çÈ½¼ö{~}");
         auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, shotLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
         if (shotLabel) dlg->AddItem(shotLabel);
 
-        // stack ê°ì²´ ê³ ìœ  ì†ì„±(ì˜ˆ: stack->GetStackIndex() ë“±) ë˜ëŠ” ì¸ë±ìŠ¤ í™œìš©
+        // stack °´Ã¼ °íÀ¯ ¼Ó¼º(¿¹: stack->GetStackIndex() µî) ¶Ç´Â ÀÎµ¦½º È°¿ë
         int extraShots = 0;
-        int stackIndex = armySlotIndex; // ìƒì„±ìì— ì „ë‹¬ëœ slot index í™œìš© ì˜ˆì‹œ
+        int stackIndex = armySlotIndex; // »ı¼ºÀÚ¿¡ Àü´ŞµÈ slot index È°¿ë ¿¹½Ã
         if (stackIndex >= 0 && stackIndex < 42)
         {
             extraShots = Era::v[942 + stackIndex];
@@ -144,7 +144,7 @@ void CreatureDlgHandler::AddCustomStats()
         if (shotVal) dlg->AddItem(shotVal);
     }
 
-    // 4. ì „íˆ¬ë ¥ ë° ë³´ì¡°ë§ˆë²• ì§€ì†ì‹œê°„ ë¬¸êµ¬ (ERM z ë³€ìˆ˜ ì§ì ‘ ì—°ê²°)
+    // 4. ÀüÅõ·Â ¹× º¸Á¶¸¶¹ı Áö¼Ó½Ã°£ ¹®±¸ (ERM z º¯¼ö Á÷Á¢ ¿¬°á)
     const char* fightText = Era::z[5]; 
     if (fightText && *fightText)
     {
@@ -318,8 +318,8 @@ BOOL CreatureDlgHandler::BuildDescriptionArea()
     const int customDescY = 255;
     const int availableHeight = std::max(100, CONTENT_BOTTOM - customDescY);
 
-    // 'íŠ¹ìˆ˜ëŠ¥ë ¥:' ë¼ë²¨ ì¶”ê°€ (ERT 202758 ì‚¬ìš©)
-    std::string specTitle = GetErtText(202758, "{~White}íŠ¹ìˆ˜ëŠ¥ë ¥:{~}");
+    // 'Æ¯¼ö´É·Â:' ¶óº§ Ãß°¡ (ERT 202758 »ç¿ë)
+    std::string specTitle = GetErtText(202758, "{~White}Æ¯¼ö´É·Â:{~}");
     auto *specLabel = H3DlgText::Create(descriptionX, customDescY - 15, descriptionWidth, 15, 
                                         specTitle.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 301, eTextAlignment::TOP_LEFT);
     if (specLabel) dlg->AddItem(specLabel);
