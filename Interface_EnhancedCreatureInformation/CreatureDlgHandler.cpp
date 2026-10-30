@@ -135,8 +135,8 @@ void CreatureDlgHandler::AddCustomStats()
         {
             for (int i = 0; i < 42; ++i)
             {
-                // GetStack 대신 H3API 표준 멤버인 combatMonsters 배열을 통해 스택 포인터 비교
-                if (combatMgr->combatMonsters[i] == stack)
+                // combatMonsters -> combatMonster (단수형)로 수정
+                if (combatMgr->combatMonster[i] == stack)
                 {
                     extraShots = Era::v[942 + i];
                     break;
