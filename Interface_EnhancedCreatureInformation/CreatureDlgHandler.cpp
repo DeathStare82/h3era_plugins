@@ -132,7 +132,7 @@ void CreatureDlgHandler::AddCustomStats()
 
         int extraShots = 0;
         
-        // [안전한 방식] 현재 전달된 armySlotIndex가 유효하면 그대로 활용, 아니면 stack 객체의 속성 활용
+        // 전달된 armySlotIndex(전투 시 stackIndex 0~41)를 활용하여 v변수 매핑
         int targetIndex = (armySlotIndex >= 0 && armySlotIndex < 42) ? armySlotIndex : 0;
         extraShots = Era::v[942 + targetIndex];
 
@@ -191,11 +191,7 @@ void CreatureDlgHandler::ApplyDialogAppearance()
             background->AdjustColor(playerColor);
     }
 
-    // =========================================================
-    // [추가] 유닛 메인 DEF 스프라이트 X좌표를 왼쪽으로 1px 이동
-    // =========================================================
-    // H3CreatureInfoDlg의 원본 유닛 Def 아이템(보통 ID 27 또는 0번 Def) 위치 조정
-    if (auto *unitDef = dlg->GetDef(27)) // 원본 대화창의 유닛 DEF ID
+    if (auto *unitDef = dlg->GetDef(27))
     {
         unitDef->SetX(unitDef->GetX() - 1);
     }
@@ -321,7 +317,6 @@ BOOL CreatureDlgHandler::BuildDescriptionArea()
     const int customDescY = 255;
     const int availableHeight = std::max(100, CONTENT_BOTTOM - customDescY);
 
-    // '특수능력:' 라벨 추가 (ERT 202758 사용)
     std::string specTitle = GetErtText(202758, "{~White}특수능력:{~}");
     auto *specLabel = H3DlgText::Create(descriptionX, customDescY - 15, descriptionWidth, 15, 
                                         specTitle.c_str(), NH3Dlg::Text::TINY, eTextColor::WHITE, 301, eTextAlignment::TOP_LEFT);

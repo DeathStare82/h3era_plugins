@@ -142,8 +142,6 @@ void DestroyDialogHandler(H3CreatureInfoDlg *dlg)
 
 void __stdcall OnCreatureDialogsGameLeave(Era::TEvent *event)
 {
-    // Handlers do not own dialog items. Discard their bookkeeping without
-    // touching dialogs that FastQuit/load may have already destroyed.
     g_dialogHandlers.clear();
     std::fill(std::begin(g_buildContexts), std::end(g_buildContexts), CreatureDialogBuildContext());
     g_buildContextDepth = 0;
@@ -165,7 +163,7 @@ int ResolveBattleDialogColor(H3CombatCreature *stack)
 {
     if (stack)
     {
-        H3Hero *owner = THISCALL_1(H3Hero *, native::STACK_OWNER_HERO, stack); // BattleStack::GetOwnerHero
+        H3Hero *owner = THISCALL_1(H3Hero *, native::STACK_OWNER_HERO, stack);
         if (owner && owner->owner >= 0 && owner->owner < limits::PLAYERS)
             return owner->owner;
     }
@@ -258,11 +256,6 @@ namespace
 H3Dlg *__stdcall CreatureDlg_DlgCtor(HiHook *hook, H3Dlg *dlg, int x, int y, int width, int height, int flags)
 {
     auto *ctx = ActiveBuildContext();
-    // The build scope already proves that we are inside one of the three
-    // H3CreatureInfoDlg constructors. Do not require a fixed return address
-    // here: another HiHook may put a trampoline between the creature ctor and
-    // Dlg::Ctor, making GetReturnAddress() different from the vanilla SoD
-    // call site even though this is still the same dialog.
     if (ctx != nullptr && ctx->dlg == reinterpret_cast<H3CreatureInfoDlg *>(dlg) &&
         width == NATIVE_DLG_WIDTH && height == NATIVE_DLG_HEIGHT)
     {
@@ -282,14 +275,11 @@ H3DlgPcx *__stdcall CreatureDlg_PcxCtor(HiHook *hook, H3DlgPcx *item, int x, int
                                   SameResource(pcxName, NATIVE_BACKGROUND_PCX);
         if (isBackground)
         {
-            // Same rule as for Dlg::Ctor: active creature-info build context +
-            // the original background signature is sufficient and survives
-            // hook chaining by other plugins.
             width = DLG_WIDTH;
             height = DLG_HEIGHT;
             pcxName = DIALOG_BACKGROUND_PCX;
         }
-        else if (id == DLG_OK_FRAME_ID) // OK frame
+        else if (id == DLG_OK_FRAME_ID)
         {
             x = OK_BUTTON_X - BUTTON_FRAME_BORDER;
             y = BUTTON_Y - BUTTON_FRAME_BORDER;
@@ -297,15 +287,12 @@ H3DlgPcx *__stdcall CreatureDlg_PcxCtor(HiHook *hook, H3DlgPcx *item, int x, int
             height = BUTTON_FRAME_HEIGHT;
             pcxName = BUTTON_FRAME_PCX;
         }
-        else if (NATIVE_UPGRADE_FRAME_RECT.Matches(x, y, width, height)) // upgrade/cast frame
+        else if (NATIVE_UPGRADE_FRAME_RECT.Matches(x, y, width, height))
         {
-            // Exact coordinates are part of the native helper signature.
-            // The PCX name is deliberately not checked so a previous hook in
-            // the chain cannot prevent the relocation.
             x = (ctx->kind == CreatureDialogKind::Battle) ? CAST_BUTTON_X - BUTTON_FRAME_BORDER : UPGRADE_BUTTON_X - BUTTON_FRAME_BORDER;
             y = BUTTON_Y - BUTTON_FRAME_BORDER;
         }
-        else if (NATIVE_DISMISS_FRAME_RECT.Matches(x, y, width, height)) // dismiss frame
+        else if (NATIVE_DISMISS_FRAME_RECT.Matches(x, y, width, height))
         {
             x = CAST_BUTTON_X;
             y = BUTTON_Y - BUTTON_FRAME_BORDER;
@@ -393,10 +380,6 @@ H3DlgDefButton *__stdcall CreatureDlg_DefButtonCtor(HiHook *hook, H3DlgDefButton
     auto *ctx = ActiveBuildContext();
     if (ctx)
     {
-        // Item ids are unique inside H3CreatureInfoDlg. Once the build scope
-        // proves the parent dialog, do not depend on original coordinates or
-        // resource names: an earlier HiHook in the chain may already have
-        // changed those arguments.
         if (GetDialogButtonX(itemId, x))
         {
             y = BUTTON_Y;
@@ -563,16 +546,13 @@ int __stdcall H3CreatureInfoDlg_Proc(HiHook *hook, H3CreatureInfoDlg *dlg, H3Msg
     }
     return result;
 }
+
 H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3CreatureInfoDlg *dlg, H3CombatCreature *mon,
                                                           int x, int y, int z)
 {
     if (!GetPluginSettings().showBattleDialog)
         return THISCALL_5(H3CreatureInfoDlg *, hook->GetDefaultFunc(), dlg, mon, x, y, z);
 
-    // Generic H3Dlg shadow rendering extends 8 pixels to the right and
-    // bottom. Keep that area inside the real game buffer as well; otherwise
-    // Pcx16_DrawShadowRect may receive an out-of-bounds destination near the
-    // right/bottom edge of the battlefield.
     int drawWidth = 0;
     int drawHeight = 0;
     GetDialogDrawBounds(drawWidth, drawHeight);
@@ -588,10 +568,26 @@ H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3Creatu
     if (result)
     {
         KeepBattleCreatureDialogInsideDrawBuffer(result);
-        auto *handler = new CreatureDlgHandler(result, mon, nullptr, -1, nullptr, ResolveBattleDialogColor(mon));
+
+        // 전투 스택 인덱스(0~41) 탐색
+        int stackIndex = 0;
+        if (mon)
+        {
+            if (auto *combatMgr = H3CombatManager::Get())
+            {
+                for (int i = 0; i < 42; ++i)
+                {
+                    if (combatMgr->GetStack(i) == mon)
+                    {
+                        stackIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        auto *handler = new CreatureDlgHandler(result, mon, nullptr, stackIndex, nullptr, ResolveBattleDialogColor(mon));
         RegisterDialogHandler(result, handler);
-        // Handler/other chained hooks may normalize dimensions or coordinates;
-        // make the final visible object safe for the 8-pixel shadow as well.
         KeepBattleCreatureDialogInsideDrawBuffer(result);
     }
     return result;
@@ -682,16 +678,12 @@ void Dlg_CreatureInfo_HooksInit(PatcherInstance *pi)
     Era::RegisterHandler(OnCreatureDialogsGameLeave, "OnGameLeave");
     Era::RegisterHandler(OnCreatureDialogsGameLeave, "OnBeforeLoadGame");
 
-    // High-level runtime hooks for the three creature-info entry points.
     pi->WriteHiHook(native::BUY_CTOR, THISCALL_, H3CreatureInfoDlg_BuyCtor);
     pi->WriteHiHook(native::ARMY_CTOR, THISCALL_, H3CreatureInfoDlg_NotBattleCtor);
     pi->WriteHiHook(native::BATTLE_CTOR, THISCALL_, H3CreatureInfoDlg_BattleCtor);
     pi->WriteHiHook(native::CREATURE_PROC, THISCALL_, H3CreatureInfoDlg_Proc);
     pi->WriteHiHook(native::CREATURE_DTOR, THISCALL_, H3CreatureInfoDlg_Dtor);
 
-    // Replace constructor arguments only while one of the creature-info
-    // constructors is on the call stack. Unique item ids/signatures are used
-    // where possible; return addresses remain only for ambiguous native items.
     pi->WriteHiHook(native::DLG_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_DlgCtor);
     pi->WriteHiHook(native::PCX_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_PcxCtor);
     pi->WriteHiHook(native::TEXT_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_TextCtor);
