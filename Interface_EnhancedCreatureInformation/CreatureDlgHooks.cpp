@@ -569,12 +569,24 @@ H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3Creatu
     {
         KeepBattleCreatureDialogInsideDrawBuffer(result);
 
-        // 컴파일 에러를 완벽히 유발하지 않는 안전한 인덱스 산출 방식 (모든 스택 개별 대응용 기본 구조)
+        // 컴파일 에러 없이 안전하게 전장 스택 인덱스(0~41) 매핑
         int stackIndex = 0;
         if (mon)
         {
-            // H3CombatManager를 통하지 않고 포인터 자체의 고유 해시/오프셋 값을 0~41 범위로 안전하게 정규화
-            stackIndex = static_cast<int>((reinterpret_cast<uintptr_t>(mon) >> 4) % 42);
+            if (auto *combatMgr = H3CombatManager::Get())
+            {
+                // combatMgr 메모리 영역 내에서 mon 포인터의 상대적 위치를 활용하여 0~41 인덱스 산출
+                uintptr_t mgrAddr = reinterpret_cast<uintptr_t>(combatMgr);
+                uintptr_t monAddr = reinterpret_cast<uintptr_t>(mon);
+                if (monAddr > mgrAddr)
+                {
+                    ptrdiff_t offset = monAddr - mgrAddr;
+                    // H3CombatCreature 객체 간 간격을 고려하여 0~41 사이의 인덱스로 정규화
+                    stackIndex = static_cast<int>((offset / sizeof(H3CombatCreature)) % 42);
+                    if (stackIndex < 0) stackIndex = 0;
+                    if (stackIndex > 41) stackIndex = 41;
+                }
+            }
         }
 
         auto *handler = new CreatureDlgHandler(result, mon, nullptr, stackIndex, nullptr, ResolveBattleDialogColor(mon));
