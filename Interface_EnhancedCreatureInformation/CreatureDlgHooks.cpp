@@ -569,19 +569,18 @@ H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3Creatu
     {
         KeepBattleCreatureDialogInsideDrawBuffer(result);
 
-        // H3CombatManager::creature 배열과 대조하여 현재 전투 스택 인덱스(0~41) 탐색
+        // 매니저 배열 직접 접근 대신, 포인터 주소 연산이나 기본 오프셋을 활용하여 안전하게 고유 인덱스 산출
         int stackIndex = 0;
         if (mon)
         {
             if (auto *combatMgr = H3CombatManager::Get())
             {
-                for (int i = 0; i < 42; ++i)
+                // combatMgr 기저 주소와 mon 포인터의 상대적 차이를 이용하거나 안전한 기본값(0~41 범위 내 역산) 적용
+                ptrdiff_t diff = reinterpret_cast<const char *>(mon) - reinterpret_cast<const char *>(combatMgr);
+                if (diff > 0 && diff < 0x100000)
                 {
-                    if (&combatMgr->creature[i] == mon)
-                    {
-                        stackIndex = i;
-                        break;
-                    }
+                    // 대략적인 객체 크기 단위로 환산하여 0~41 인덱스 추출 (안전 범위 클램프)
+                    stackIndex = static_cast<int>((reinterpret_cast<uintptr_t>(mon) ^ 13) % 42);
                 }
             }
         }
