@@ -569,12 +569,20 @@ H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3Creatu
     {
         KeepBattleCreatureDialogInsideDrawBuffer(result);
 
-        // 문법 에러를 완벽히 제거한 안전한 인덱스 할당
         int stackIndex = 0;
         if (mon)
         {
-            // 현재 우클릭된 몬스터 포인터를 기반으로 한 안전한 기본 매핑값 유지 (추후 인덱스 추출식 고도화)
-            stackIndex = 0; 
+            if (auto *combatMgr = H3CombatManager::Get())
+            {
+                for (int i = 0; i < 42; ++i)
+                {
+                    if (&combatMgr->stack[i] == mon)
+                    {
+                        stackIndex = i;
+                        break;
+                    }
+                }
+            }
         }
 
         auto *handler = new CreatureDlgHandler(result, mon, nullptr, stackIndex, nullptr, ResolveBattleDialogColor(mon));
@@ -681,4 +689,16 @@ void Dlg_CreatureInfo_HooksInit(PatcherInstance *pi)
     pi->WriteHiHook(native::TEXT_PCX_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_TextPcxCtor);
     pi->WriteHiHook(native::DEF_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_DefCtor);
     pi->WriteHiHook(native::BUTTON_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_DefButtonCtor);
-    pi
+    pi->WriteHiHook(native::CUSTOM_BUTTON_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_CustomButtonCtor);
+
+    H3DLL wndPlugin("wog native dialogs.era");
+    if (wndPlugin.dataSize)
+    {
+        int pluginHookAddress = wndPlugin.NeedleSearch<6>({0x0F, 0x8C, 0xC8, 0xFE, 0xFF, 0xFF}, EXPERIENCE_SHOW_PATTERN_OFFSET);
+        if (pluginHookAddress)
+            pi->WriteLoHook(pluginHookAddress, Wnd_BeforeExpoDlgShow);
+        pluginHookAddress = wndPlugin.NeedleSearch<3>({0x3D, 0x68, 0x02}, COMMANDER_SHOW_PATTERN_OFFSET);
+        if (pluginHookAddress)
+            pi->WriteLoHook(pluginHookAddress, Before_WndNPC_DLG);
+    }
+}
