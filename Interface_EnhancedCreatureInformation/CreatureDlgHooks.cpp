@@ -569,11 +569,21 @@ H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3Creatu
     {
         KeepBattleCreatureDialogInsideDrawBuffer(result);
 
-        // 전투 스택 인덱스(0~41)를 H3API 표준 GetIndex()로 조회
+        // H3CombatManager::st 배열과 대조하여 현재 전투 스택 인덱스(0~41) 탐색
         int stackIndex = 0;
         if (mon)
         {
-            stackIndex = mon->GetIndex();
+            if (auto *combatMgr = H3CombatManager::Get())
+            {
+                for (int i = 0; i < 42; ++i)
+                {
+                    if (&combatMgr->st[i] == mon)
+                    {
+                        stackIndex = i;
+                        break;
+                    }
+                }
+            }
         }
 
         auto *handler = new CreatureDlgHandler(result, mon, nullptr, stackIndex, nullptr, ResolveBattleDialogColor(mon));
