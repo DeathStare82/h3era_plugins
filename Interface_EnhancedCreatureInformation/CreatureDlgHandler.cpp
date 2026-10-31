@@ -131,21 +131,28 @@ void CreatureDlgHandler::AddCustomStats()
         if (shotLabel) dlg->AddItem(shotLabel);
 
         int extraShots = 0;
-        // 임시로 안전하게 0으로 처리하거나, 프로젝트 내 다른 스택 탐색 로직 적용
-        // extraShots = Era::v[942]; // 예시
+        
+        // 방법 A: stack 객체가 전장 내 고유 인덱스(또는 슬롯 번호)를 가지고 있는 경우
+        // (만약 클래스 내부에 인덱스를 가져오는 함수나 멤버가 있다면 그 이름으로 대체할 수 있습니다)
+        int stackIndex = -1;
+        
+        // 전장 상황인지 영웅 화면 상황인지에 따라 인덱스 판별
+        // 예시로 전달받은 armySlotIndex나 stack 내부 속성을 활용할 수 있습니다.
+        if (armySlotIndex >= 0 && armySlotIndex < 7)
+        {
+            // 영웅 부대창(어드벤처/전투 전)인 경우의 슬롯 번호 활용
+            stackIndex = armySlotIndex;
+        }
+        
+        if (stackIndex >= 0)
+        {
+            extraShots = Era::v[942 + stackIndex];
+        }
 
         char shotBuf[16];
         std::snprintf(shotBuf, sizeof(shotBuf), "%d", extraShots);
         auto *shotVal = H3DlgText::Create(311, 86, 118, 17, shotBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 204, eTextAlignment::TOP_RIGHT);
         if (shotVal) dlg->AddItem(shotVal);
-    }
-
-    // 4. 전투력 및 보조마법 지속시간 문구 (ERM z 변수 직접 연결)
-    const char* fightText = Era::z[5]; 
-    if (fightText && *fightText)
-    {
-        auto *fightVal = H3DlgText::Create(17, 208, 280, 28, fightText, NH3Dlg::Text::TINY, eTextColor::WHITE, 300, eTextAlignment::TOP_LEFT);
-        if (fightVal) dlg->AddItem(fightVal);
     }
 }
 
