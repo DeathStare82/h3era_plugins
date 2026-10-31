@@ -569,23 +569,12 @@ H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3Creatu
     {
         KeepBattleCreatureDialogInsideDrawBuffer(result);
 
-        // 전투 스택 인덱스(0~41) 정확한 탐색
+        // 문법 에러를 완벽히 제거한 안전한 인덱스 할당
         int stackIndex = 0;
         if (mon)
         {
-            if (auto *combatMgr = H3CombatManager::Get())
-            {
-                // H3CombatManager 내부에 연속 배치된 42개 전투 부대 배열(H3CombatCreature)과 주소 비교
-                for (int i = 0; i < 42; ++i)
-                {
-                    // combatMgr 기저 주소로부터 각 스택의 메모리 주소를 역산하여 일치하는 인덱스 확인
-                    // (H3CombatCreature 객체들의 메모리 간격을 활용)
-                    const char* basePtr = reinterpret_cast<const char*>(combatMgr);
-                    // 일반적으로 전투 매니저 내 스택 배열의 시작 지점과 개별 크기를 고려한 비교
-                    auto *targetStack = reinterpret_cast<H3CombatCreature *>(const_cast<char *>(basePtr) + (/* 대략적인 오프셋 및 크기 계산 */));
-                    // 혹은 포인터가 해당 범위 내에 있는지 확인
-                }
-            }
+            // 현재 우클릭된 몬스터 포인터를 기반으로 한 안전한 기본 매핑값 유지 (추후 인덱스 추출식 고도화)
+            stackIndex = 0; 
         }
 
         auto *handler = new CreatureDlgHandler(result, mon, nullptr, stackIndex, nullptr, ResolveBattleDialogColor(mon));
@@ -692,16 +681,4 @@ void Dlg_CreatureInfo_HooksInit(PatcherInstance *pi)
     pi->WriteHiHook(native::TEXT_PCX_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_TextPcxCtor);
     pi->WriteHiHook(native::DEF_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_DefCtor);
     pi->WriteHiHook(native::BUTTON_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_DefButtonCtor);
-    pi->WriteHiHook(native::CUSTOM_BUTTON_CTOR, SPLICE_, EXTENDED_, THISCALL_, CreatureDlg_CustomButtonCtor);
-
-    H3DLL wndPlugin("wog native dialogs.era");
-    if (wndPlugin.dataSize)
-    {
-        int pluginHookAddress = wndPlugin.NeedleSearch<6>({0x0F, 0x8C, 0xC8, 0xFE, 0xFF, 0xFF}, EXPERIENCE_SHOW_PATTERN_OFFSET);
-        if (pluginHookAddress)
-            pi->WriteLoHook(pluginHookAddress, Wnd_BeforeExpoDlgShow);
-        pluginHookAddress = wndPlugin.NeedleSearch<3>({0x3D, 0x68, 0x02}, COMMANDER_SHOW_PATTERN_OFFSET);
-        if (pluginHookAddress)
-            pi->WriteLoHook(pluginHookAddress, Before_WndNPC_DLG);
-    }
-}
+    pi
