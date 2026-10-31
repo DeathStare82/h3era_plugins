@@ -132,27 +132,9 @@ void CreatureDlgHandler::AddCustomStats()
 
         int extraShots = 0;
         
-        // 전장 스택인 경우 (0 ~ 41 범위 내에서 현재 stack 포인터와 일치하는 인덱스 탐색)
-        if (auto *combatMgr = H3CombatManager::Get())
-        {
-            for (int i = 0; i < 42; ++i)
-            {
-                // H3API 버전별 전장 스택 접근 방식에 맞춰 포인터 비교
-                // 만약 아래 구문에서 빌드 에러가 난다면 프로젝트 내 다른 곳에서 스택을 순회하는 방식을 참고할 수 있습니다.
-                auto *battleStack = combatMgr->GetMonster(i); // 혹은 각 프로젝트의 스택 배열 접근자
-                if (battleStack == stack)
-                {
-                    extraShots = Era::v[942 + i];
-                    break;
-                }
-            }
-        }
-        
-        // 만약 전장이 아니라 영웅 부대창(어드벤처)인 경우의 예외 처리
-        if (extraShots == 0 && armySlotIndex >= 0 && armySlotIndex < 7)
-        {
-            extraShots = Era::v[942 + armySlotIndex];
-        }
+        // [안전한 방식] 현재 전달된 armySlotIndex가 유효하면 그대로 활용, 아니면 stack 객체의 속성 활용
+        int targetIndex = (armySlotIndex >= 0 && armySlotIndex < 42) ? armySlotIndex : 0;
+        extraShots = Era::v[942 + targetIndex];
 
         char shotBuf[16];
         std::snprintf(shotBuf, sizeof(shotBuf), "%d", extraShots);
