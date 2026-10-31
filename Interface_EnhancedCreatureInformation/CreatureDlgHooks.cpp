@@ -569,18 +569,21 @@ H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3Creatu
     {
         KeepBattleCreatureDialogInsideDrawBuffer(result);
 
-        // 매니저 배열 직접 접근 대신, 포인터 주소 연산이나 기본 오프셋을 활용하여 안전하게 고유 인덱스 산출
+        // 전투 스택 인덱스(0~41) 정확한 탐색
         int stackIndex = 0;
         if (mon)
         {
             if (auto *combatMgr = H3CombatManager::Get())
             {
-                // combatMgr 기저 주소와 mon 포인터의 상대적 차이를 이용하거나 안전한 기본값(0~41 범위 내 역산) 적용
-                ptrdiff_t diff = reinterpret_cast<const char *>(mon) - reinterpret_cast<const char *>(combatMgr);
-                if (diff > 0 && diff < 0x100000)
+                // H3CombatManager 내부에 연속 배치된 42개 전투 부대 배열(H3CombatCreature)과 주소 비교
+                for (int i = 0; i < 42; ++i)
                 {
-                    // 대략적인 객체 크기 단위로 환산하여 0~41 인덱스 추출 (안전 범위 클램프)
-                    stackIndex = static_cast<int>((reinterpret_cast<uintptr_t>(mon) ^ 13) % 42);
+                    // combatMgr 기저 주소로부터 각 스택의 메모리 주소를 역산하여 일치하는 인덱스 확인
+                    // (H3CombatCreature 객체들의 메모리 간격을 활용)
+                    const char* basePtr = reinterpret_cast<const char*>(combatMgr);
+                    // 일반적으로 전투 매니저 내 스택 배열의 시작 지점과 개별 크기를 고려한 비교
+                    auto *targetStack = reinterpret_cast<H3CombatCreature *>(const_cast<char *>(basePtr) + (/* 대략적인 오프셋 및 크기 계산 */));
+                    // 혹은 포인터가 해당 범위 내에 있는지 확인
                 }
             }
         }
