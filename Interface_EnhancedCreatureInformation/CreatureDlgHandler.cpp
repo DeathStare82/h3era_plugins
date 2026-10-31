@@ -132,21 +132,26 @@ void CreatureDlgHandler::AddCustomStats()
 
         int extraShots = 0;
         
-        // 방법 A: stack 객체가 전장 내 고유 인덱스(또는 슬롯 번호)를 가지고 있는 경우
-        // (만약 클래스 내부에 인덱스를 가져오는 함수나 멤버가 있다면 그 이름으로 대체할 수 있습니다)
-        int stackIndex = -1;
-        
-        // 전장 상황인지 영웅 화면 상황인지에 따라 인덱스 판별
-        // 예시로 전달받은 armySlotIndex나 stack 내부 속성을 활용할 수 있습니다.
-        if (armySlotIndex >= 0 && armySlotIndex < 7)
+        // 전장 스택인 경우 (0 ~ 41 범위 내에서 현재 stack 포인터와 일치하는 인덱스 탐색)
+        if (auto *combatMgr = H3CombatManager::Get())
         {
-            // 영웅 부대창(어드벤처/전투 전)인 경우의 슬롯 번호 활용
-            stackIndex = armySlotIndex;
+            for (int i = 0; i < 42; ++i)
+            {
+                // H3API 버전별 전장 스택 접근 방식에 맞춰 포인터 비교
+                // 만약 아래 구문에서 빌드 에러가 난다면 프로젝트 내 다른 곳에서 스택을 순회하는 방식을 참고할 수 있습니다.
+                auto *battleStack = combatMgr->GetMonster(i); // 혹은 각 프로젝트의 스택 배열 접근자
+                if (battleStack == stack)
+                {
+                    extraShots = Era::v[942 + i];
+                    break;
+                }
+            }
         }
         
-        if (stackIndex >= 0)
+        // 만약 전장이 아니라 영웅 부대창(어드벤처)인 경우의 예외 처리
+        if (extraShots == 0 && armySlotIndex >= 0 && armySlotIndex < 7)
         {
-            extraShots = Era::v[942 + stackIndex];
+            extraShots = Era::v[942 + armySlotIndex];
         }
 
         char shotBuf[16];
