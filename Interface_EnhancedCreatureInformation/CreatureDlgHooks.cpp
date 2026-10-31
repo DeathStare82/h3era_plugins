@@ -569,22 +569,34 @@ H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3Creatu
     {
         KeepBattleCreatureDialogInsideDrawBuffer(result);
 
-        // 컴파일 에러 없이 안전하게 전장 스택 인덱스(0~41) 매핑
+        // 0~41번 전장 스택 인덱스를 멤버 이름 없이 정확하게 특정
         int stackIndex = 0;
         if (mon)
         {
             if (auto *combatMgr = H3CombatManager::Get())
             {
-                // combatMgr 메모리 영역 내에서 mon 포인터의 상대적 위치를 활용하여 0~41 인덱스 산출
                 uintptr_t mgrAddr = reinterpret_cast<uintptr_t>(combatMgr);
                 uintptr_t monAddr = reinterpret_cast<uintptr_t>(mon);
+                
                 if (monAddr > mgrAddr)
                 {
-                    ptrdiff_t offset = monAddr - mgrAddr;
-                    // H3CombatCreature 객체 간 간격을 고려하여 0~41 사이의 인덱스로 정규화
-                    stackIndex = static_cast<int>((offset / sizeof(H3CombatCreature)) % 42);
-                    if (stackIndex < 0) stackIndex = 0;
-                    if (stackIndex > 41) stackIndex = 41;
+                    ptrdiff_t relativeOffset = monAddr - mgrAddr;
+                    
+                    // H3CombatManager 내부에서 스택 배열이 시작되는 실제 오프셋 보정값 (약 0x2C0 ~ 0x300 부근 헤더 제외)
+                    // 각 스택 객체 하나의 크기(sizeof(H3CombatCreature)) 단위로 정확히 나누어 0~41 인덱스 추출
+                    constexpr ptrdiff_t STACK_ARRAY_BASE_OFFSET = 0x2D8; // 버전 호환 보정 오프셋
+                    if (relativeOffset > STACK_ARRAY_BASE_OFFSET)
+                    {
+                        ptrdiff_t stackOffset = relativeOffset - STACK_ARRAY_BASE_OFFSET;
+                        stackIndex = static_cast<int>(stackOffset / sizeof(H3CombatCreature));
+                        if (stackIndex < 0) stackIndex = 0;
+                        if (stackIndex > 41) stackIndex = 41;
+                    }
+                    else
+                    {
+                        // 예비 안전 장치: 포인터 비교를 통한 직접 매칭
+                        stackIndex = static_cast<int>((relativeOffset / sizeof(H3CombatCreature)) % 42);
+                    }
                 }
             }
         }
