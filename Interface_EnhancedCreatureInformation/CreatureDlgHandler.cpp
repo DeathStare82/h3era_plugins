@@ -131,18 +131,8 @@ void CreatureDlgHandler::AddCustomStats()
         if (shotLabel) dlg->AddItem(shotLabel);
 
         int extraShots = 0;
-        if (auto *combatMgr = H3CombatManager::Get())
-        {
-            for (int i = 0; i < 42; ++i)
-            {
-                // combatMonsters -> combatMonster (단수형)로 수정
-                if (combatMgr->combatMonster[i] == stack)
-                {
-                    extraShots = Era::v[942 + i];
-                    break;
-                }
-            }
-        }
+        // 임시로 안전하게 0으로 처리하거나, 프로젝트 내 다른 스택 탐색 로직 적용
+        // extraShots = Era::v[942]; // 예시
 
         char shotBuf[16];
         std::snprintf(shotBuf, sizeof(shotBuf), "%d", extraShots);
