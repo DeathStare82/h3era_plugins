@@ -91,7 +91,7 @@ void CreatureDlgHandler::HideDefaultBattleSpellItems()
             item->HideDeactivate();
 }
 
-// 상태, 마법횟수, 여분발사횟수 및 ERM 연동 전투력/지속시간 추가
+// 상태, 마법횟수, 여분발사횟수 및 ERM z변수 연동 텍스트 업데이트 추가
 void CreatureDlgHandler::AddCustomStats()
 {
     if (!dlg || !stack)
@@ -131,8 +131,6 @@ void CreatureDlgHandler::AddCustomStats()
         if (shotLabel) dlg->AddItem(shotLabel);
 
         int extraShots = 0;
-        
-        // 전달된 armySlotIndex(전투 시 stackIndex 0~41)를 활용하여 v변수 매핑
         int targetIndex = (armySlotIndex >= 0 && armySlotIndex < 42) ? armySlotIndex : 0;
         extraShots = Era::v[942 + targetIndex];
 
@@ -140,6 +138,43 @@ void CreatureDlgHandler::AddCustomStats()
         std::snprintf(shotBuf, sizeof(shotBuf), "%d", extraShots);
         auto *shotVal = H3DlgText::Create(311, 86, 118, 17, shotBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 204, eTextAlignment::TOP_RIGHT);
         if (shotVal) dlg->AddItem(shotVal);
+    }
+
+    // =========================================================================
+    // [ERM z변수 연동 영역] z11 ~ z21 데이터를 템플릿의 각 텍스트 컨트롤 ID에 바인딩
+    // =========================================================================
+    struct TextMapping {
+        int itemId;
+        int zIndex;
+    };
+
+    TextMapping ermMappings[] = {
+        { 1,   11 }, // 유닛 이름 및 소환/복제 여부 (Stack_Name -> z11)
+        { 109, 12 }, // 반격 횟수 (Stack_Retaliation -> z12)
+        { 31,  13 }, // 전투력 (Stack_FightValue -> z13)
+        { 38,  14 }, // 특수능력 설명 (Mon_Specialty -> z14)
+        { 104, 15 }, // 여분발사횟수 (Stack_ExtraShots -> z15)
+        { 212, 16 }, // 사기 (Stack_Moral -> z16)
+        { 312, 17 }, // 사기 설명 (Stack_Moral_Hint -> z17)
+        { 213, 18 }, // 행운 (Stack_Luck -> z18)
+        { 313, 19 }, // 행운 설명 (Stack_Luck_Hint -> z19)
+        { 41,  20 }, // 추가 설명 (Stack_etc -> z20)
+        { 36,  21 }  // 적용된 마법 목록 (Stack_AppliedSpell -> z21)
+    };
+
+    for (const auto& mapping : ermMappings)
+    {
+        if (auto *item = dlg->GetH3DlgItem(mapping.itemId))
+        {
+            const char* zText = Era::z[mapping.zIndex];
+            if (zText)
+            {
+                if (auto *txtItem = item->AsText())
+                {
+                    txtItem->SetText(zText);
+                }
+            }
+        }
     }
 }
 

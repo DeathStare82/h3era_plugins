@@ -569,35 +569,11 @@ H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3Creatu
     {
         KeepBattleCreatureDialogInsideDrawBuffer(result);
 
-        // 스택 인덱스(0~41) 정확한 산출 (언더플로우 방지 및 0x2C0 정밀 베이스 보정)
-        int stackIndex = 0;
-        if (mon)
-        {
-            if (auto *combatMgr = H3CombatManager::Get())
-            {
-                uintptr_t mgrAddr = reinterpret_cast<uintptr_t>(combatMgr);
-                uintptr_t monAddr = reinterpret_cast<uintptr_t>(mon);
-                
-                if (monAddr > mgrAddr)
-                {
-                    ptrdiff_t relativeOffset = monAddr - mgrAddr;
-                    constexpr ptrdiff_t STACK_ARRAY_BASE_OFFSET = 0x2C0; // 0번 스택이 정확히 0이 되도록 맞춘 정밀 보정값
-                    
-                    if (relativeOffset > STACK_ARRAY_BASE_OFFSET)
-                    {
-                        ptrdiff_t stackOffset = relativeOffset - STACK_ARRAY_BASE_OFFSET;
-                        stackIndex = static_cast<int>(stackOffset / sizeof(H3CombatCreature));
-                    }
-                    else
-                    {
-                        stackIndex = 0; // 0번 스택 안전 보장
-                    }
-                    
-                    if (stackIndex < 0) stackIndex = 0;
-                    if (stackIndex > 41) stackIndex = 41;
-                }
-            }
-        }
+        // [정리 완료] 복잡한 메모리 오프셋 계산을 버리고, 
+        // ERM이 미리 세팅해 둔 현재 스택 인덱스(v989)를 안전하게 가져옴
+        int stackIndex = Era::v[989];
+        if (stackIndex < 0) stackIndex = 0;
+        if (stackIndex > 41) stackIndex = 41;
 
         auto *handler = new CreatureDlgHandler(result, mon, nullptr, stackIndex, nullptr, ResolveBattleDialogColor(mon));
         RegisterDialogHandler(result, handler);
