@@ -169,7 +169,9 @@ void CreatureDlgHandler::AddCustomStats()
             const char* zText = Era::z[mapping.zIndex];
             if (zText)
             {
-                if (auto *txtItem = item->AsText())
+                // H3DlgItem을 H3DlgText로 안전하게 캐스팅하여 텍스트 주입
+                auto *txtItem = static_cast<H3DlgText*>(item);
+                if (txtItem)
                 {
                     txtItem->SetText(zText);
                 }
