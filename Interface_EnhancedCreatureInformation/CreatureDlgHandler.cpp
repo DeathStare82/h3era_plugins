@@ -97,6 +97,16 @@ void CreatureDlgHandler::AddCustomStats()
     if (!dlg || !stack)
         return;
 
+    // [수정] 창 좌측 하단에 남아있던 기존 사기/행운 아이콘 및 텍스트 강제 숨기기
+    if (auto *moraleIcon = dlg->GetDef(DLG_MORALE_ID))
+        moraleIcon->HideDeactivate();
+    if (auto *moraleText = dlg->GetText(DLG_MORALE_TEXT_ID))
+        moraleText->HideDeactivate();
+    if (auto *luckIcon = dlg->GetDef(DLG_LUCK_ID))
+        luckIcon->HideDeactivate();
+    if (auto *luckText = dlg->GetText(DLG_LUCK_TEXT_ID))
+        luckText->HideDeactivate();
+
     // 1. 상태 (ERT 202755 / 202714~202717)
     std::string statusLabelText = GetErtText(202755, "{~White}상태{~}");
     auto *statusLabel = H3DlgText::Create(311, 48, 110, 17, statusLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 111, eTextAlignment::TOP_LEFT);
@@ -141,7 +151,7 @@ void CreatureDlgHandler::AddCustomStats()
     }
 
     // =========================================================================
-    // [ERM z변수 연동 영역] z11 ~ z21 데이터를 템플릿의 각 텍스트 컨트롤 ID에 바인딩
+    // [ERM z변수 연동 영역] 템플릿의 라벨 ID를 건드리지 않고, 정확한 값/설명 ID에만 z변수 매핑
     // =========================================================================
     struct TextMapping {
         int itemId;
@@ -150,10 +160,10 @@ void CreatureDlgHandler::AddCustomStats()
 
     TextMapping ermMappings[] = {
         { 1,   11 }, // 유닛 이름 및 소환/복제 여부 (Stack_Name -> z11)
-        { 109, 12 }, // 반격 횟수 (Stack_Retaliation -> z12)
+        { 209, 12 }, // 반격 횟수 값 (Stack_Retaliation -> z12) [ID 109 라벨 보호]
         { 31,  13 }, // 전투력 (Stack_FightValue -> z13)
         { 38,  14 }, // 특수능력 설명 (Mon_Specialty -> z14)
-        { 104, 15 }, // 여분발사횟수 (Stack_ExtraShots -> z15)
+        { 204, 15 }, // 여분발사횟수 값 (Stack_ExtraShots -> z15) [ID 104 라벨 보호]
         { 212, 16 }, // 사기 (Stack_Moral -> z16)
         { 312, 17 }, // 사기 설명 (Stack_Moral_Hint -> z17)
         { 213, 18 }, // 행운 (Stack_Luck -> z18)
@@ -169,7 +179,6 @@ void CreatureDlgHandler::AddCustomStats()
             const char* zText = Era::z[mapping.zIndex];
             if (zText)
             {
-                // H3DlgItem을 H3DlgText로 안전하게 캐스팅하여 텍스트 주입
                 auto *txtItem = static_cast<H3DlgText*>(item);
                 if (txtItem)
                 {
