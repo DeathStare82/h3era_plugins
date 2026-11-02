@@ -16,11 +16,11 @@
 using namespace h3;
 using namespace creatureInfo;
 
-// ERT ÆÄÀÏÀÇ µ¥ÀÌÅÍ¸¦ ´ãÀ» Àü¿ª ¸Ê
+// ERT íŒŒì¼ì˜ ë°ì´í„°ë¥¼ ë‹´ì„ ì „ì—­ ë§µ
 static std::map<int, std::string> g_ertStrings;
 static bool g_isErtLoaded = false;
 
-// .ert ÆÄÀÏ ÆÄ½Ì
+// .ert íŒŒì¼ íŒŒì‹±
 void LoadErtFile()
 {
     if (g_isErtLoaded)
@@ -91,102 +91,157 @@ void CreatureDlgHandler::HideDefaultBattleSpellItems()
             item->HideDeactivate();
 }
 
-// »óÅÂ, ¸¶¹ıÈ½¼ö, ¿©ºĞ¹ß»çÈ½¼ö ¹× ERM zº¯¼ö ¿¬µ¿ ÅØ½ºÆ® ¾÷µ¥ÀÌÆ® Ãß°¡
+// =====================================================================
+// [Multiverse] ì»¤ìŠ¤í…€ ë ˆì´ì•„ì›ƒ ë„ìš°ë¯¸ (Stackinfo_0.txt í…œí”Œë¦¿ ì¢Œí‘œ ê¸°ì¤€, ì°½ í¬ê¸° 450x419)
+// =====================================================================
+namespace
+{
+    // í…œí”Œë¦¿ ID + 30000 â†’ ì›ë³¸ ì°½ í•­ëª©ì´ë‚˜ daemon í•­ëª©ê³¼ ì ˆëŒ€ ê²¹ì¹˜ì§€ ì•ŠìŒ
+    constexpr int MV_ID_BASE = 30000;
+
+    bool MvIsEmpty(const char* s)
+    {
+        if (!s) return true;
+        for (; *s; ++s)
+            if (*s != ' ' && *s != '\t' && *s != '\r' && *s != '\n')
+                return false;
+        return true;
+    }
+
+    const char* MvZ(int index)            // ERM zë³€ìˆ˜ ì½ê¸° (z11 â†’ MvZ(11))
+    {
+        const char* s = Era::z[index];
+        return s ? s : "";
+    }
+
+    int MvCountLines(const char* s)       // ì¤„ ìˆ˜ ì„¸ê¸° (ì ìš©ëœ ë§ˆë²• ê°œìˆ˜ìš©)
+    {
+        if (MvIsEmpty(s)) return 0;
+        int n = 1;
+        for (; *s; ++s)
+            if (*s == '\n') ++n;
+        return n;
+    }
+
+    H3DlgText* MvAddText(H3CreatureInfoDlg* dlg, int templateId, int x, int y, int w, int h,
+                         const char* text, LPCSTR font, eTextAlignment align)
+    {
+        if (!dlg || MvIsEmpty(text)) return nullptr;
+        auto* item = H3DlgText::Create(x, y, w, h, text, font, eTextColor::WHITE,
+                                       MV_ID_BASE + templateId, align);
+        if (item) dlg->AddItem(item);
+        return item;
+    }
+
+    void MvHide(H3CreatureInfoDlg* dlg, int id)
+    {
+        if (!dlg) return;
+        if (auto* item = dlg->GetH3DlgItem(id))
+            item->HideDeactivate();
+    }
+
+    // "%d" ìë¦¬ì— ìˆ«ì ë¼ì›Œë„£ê¸° (ERT ë¬¸êµ¬ìš©)
+    std::string MvFormatCount(std::string fmt, int value)
+    {
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "%d", value);
+        const auto pos = fmt.find("%d");
+        if (pos != std::string::npos) fmt.replace(pos, 2, buf);
+        else fmt += buf;
+        return fmt;
+    }
+}
+
+// ì»¤ìŠ¤í…€ ìœ ë‹› ì •ë³´ì°½ ì „ì²´ ë°°ì¹˜ (z11~z21 + C++ ê³„ì‚°ê°’)
 void CreatureDlgHandler::AddCustomStats()
 {
     if (!dlg || !stack)
         return;
 
-    // [¼öÁ¤] Ã¢ ÁÂÃø ÇÏ´Ü¿¡ ³²¾ÆÀÖ´ø ±âÁ¸ »ç±â/Çà¿î ¾ÆÀÌÄÜ ¹× ÅØ½ºÆ® °­Á¦ ¼û±â±â
-    if (auto *moraleIcon = dlg->GetDef(DLG_MORALE_ID))
-        moraleIcon->HideDeactivate();
-    if (auto *moraleText = dlg->GetText(DLG_MORALE_TEXT_ID))
-        moraleText->HideDeactivate();
-    if (auto *luckIcon = dlg->GetDef(DLG_LUCK_ID))
-        luckIcon->HideDeactivate();
-    if (auto *luckText = dlg->GetText(DLG_LUCK_TEXT_ID))
-        luckText->HideDeactivate();
+    // ---------- 0. ì›ë³¸ í•­ëª© ìˆ¨ê¸°ê¸°: ì´ë¦„ / ì‚¬ê¸° / í–‰ìš´ / íŠ¹ìˆ˜ëŠ¥ë ¥ ì„¤ëª… ----------
+    MvHide(dlg, DLG_NAME_ID);
+    MvHide(dlg, DLG_MORALE_ID);
+    MvHide(dlg, DLG_MORALE_TEXT_ID);
+    MvHide(dlg, DLG_LUCK_ID);
+    MvHide(dlg, DLG_LUCK_TEXT_ID);
+    if (auto* desc = FindOriginalDescription())
+        desc->HideDeactivate();
 
-    // 1. »óÅÂ (ERT 202755 / 202714~202717)
-    std::string statusLabelText = GetErtText(202755, "{~White}»óÅÂ{~}");
-    auto *statusLabel = H3DlgText::Create(311, 48, 110, 17, statusLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 111, eTextAlignment::TOP_LEFT);
-    if (statusLabel) dlg->AddItem(statusLabel);
+    // ---------- 1. ìœ ë‹› ì´ë¦„ (z11)  [í…œí”Œë¦¿ 1: 20,23,409,17 ê°€ìš´ë°] ----------
+    MvAddText(dlg, 1, 20, 23, 409, 17, MvZ(11), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_CENTER);
 
-    std::string statusText = GetErtText(202714, "Çàµ¿ Àü");
+    // ---------- 2. ìƒíƒœ  [í…œí”Œë¦¿ 111/211: 311,48] ----------
+    std::string statusLabel = GetErtText(202755, "{~White}ìƒíƒœ{~}");
+    MvAddText(dlg, 111, 311, 48, 110, 17, statusLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
+
+    std::string statusText = GetErtText(202714, "{~Cyan}í–‰ë™ ì „{~}");
     if (stack->IsWaiting())
-        statusText = GetErtText(202715, "´ë±âÁß");
+        statusText = GetErtText(202715, "{~y}ëŒ€ê¸°ì¤‘{~}");
     else if (stack->IsDefending())
-        statusText = GetErtText(202717, "Çàµ¿ ³¡ (¹æ¾î)");
+        statusText = GetErtText(202717, "ë°©ì–´");
     else if (stack->IsDone())
-        statusText = GetErtText(202716, "Çàµ¿ ³¡");
+        statusText = GetErtText(202716, "í–‰ë™ ë");
+    MvAddText(dlg, 211, 311, 48, 118, 17, statusText.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
 
-    auto *statusVal = H3DlgText::Create(311, 48, 118, 17, statusText.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 211, eTextAlignment::TOP_RIGHT);
-    if (statusVal) dlg->AddItem(statusVal);
-
-    // 2. ¸¶¹ıÈ½¼ö (ERT 202756)
-    std::string spellLabelText = GetErtText(202756, "{~White}¸¶¹ıÈ½¼ö{~}");
-    auto *spellLabel = H3DlgText::Create(311, 67, 110, 17, spellLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 110, eTextAlignment::TOP_LEFT);
-    if (spellLabel) dlg->AddItem(spellLabel);
+    // ---------- 3. ë§ˆë²•íšŸìˆ˜  [í…œí”Œë¦¿ 110/210: 311,67] ----------
+    std::string spellLabel = GetErtText(202756, "{~White}ë§ˆë²•íšŸìˆ˜{~}");
+    MvAddText(dlg, 110, 311, 67, 110, 17, spellLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
 
     char spellBuf[16];
     std::snprintf(spellBuf, sizeof(spellBuf), "%d", stack->info.spellCharges);
-    auto *spellVal = H3DlgText::Create(311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 210, eTextAlignment::TOP_RIGHT);
-    if (spellVal) dlg->AddItem(spellVal);
+    MvAddText(dlg, 210, 311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
 
-    // 3. ¿©ºĞ¹ß»çÈ½¼ö (ERT 202757 / ERM vº¯¼ö ¿¬µ¿)
+    // ---------- 4. ì—¬ë¶„ë°œì‚¬íšŸìˆ˜  [í…œí”Œë¦¿ 104/204: 311,86]  (ì‚¬ê²© ìœ ë‹›ë§Œ) ----------
     if (stack->info.shooter)
     {
-        std::string shotLabelText = GetErtText(202757, "{~White}¿©ºĞ¹ß»çÈ½¼ö{~}");
-        auto *shotLabel = H3DlgText::Create(311, 86, 110, 17, shotLabelText.c_str(), NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 104, eTextAlignment::TOP_LEFT);
-        if (shotLabel) dlg->AddItem(shotLabel);
+        std::string shotLabel = GetErtText(202757, "{~White}ì—¬ë¶„ë°œì‚¬íšŸìˆ˜{~}");
+        MvAddText(dlg, 104, 311, 86, 110, 17, shotLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
 
-        int extraShots = 0;
-        int targetIndex = (armySlotIndex >= 0 && armySlotIndex < 42) ? armySlotIndex : 0;
-        extraShots = Era::v[942 + targetIndex];
-
+        const int targetIndex = (armySlotIndex >= 0 && armySlotIndex < 42) ? armySlotIndex : 0;
+        const int extraShots = Era::v[942 + targetIndex];
         char shotBuf[16];
         std::snprintf(shotBuf, sizeof(shotBuf), "%d", extraShots);
-        auto *shotVal = H3DlgText::Create(311, 86, 118, 17, shotBuf, NH3Dlg::Text::SMALL, eTextColor::WHITE, 204, eTextAlignment::TOP_RIGHT);
-        if (shotVal) dlg->AddItem(shotVal);
+        MvAddText(dlg, 204, 311, 86, 118, 17, shotBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
     }
 
-    // =========================================================================
-    // [ERM zº¯¼ö ¿¬µ¿ ¿µ¿ª] ÅÛÇÃ¸´ÀÇ ¶óº§ ID¸¦ °Çµå¸®Áö ¾Ê°í, Á¤È®ÇÑ °ª/¼³¸í ID¿¡¸¸ zº¯¼ö ¸ÅÇÎ
-    // =========================================================================
-    struct TextMapping {
-        int itemId;
-        int zIndex;
-    };
+    // ---------- 5. ì›ë˜ ìˆ˜ëŸ‰ (C++ ì§ì ‘)  [í…œí”Œë¦¿ 30/40: 48,185,113,17] ----------
+    std::string origLabel = GetErtText(202760, "{~White}ì›ë˜ ìˆ˜ëŸ‰:{~}");
+    MvAddText(dlg, 30, 48, 185, 113, 17, origLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
 
-    TextMapping ermMappings[] = {
-        { 1,   11 }, // À¯´Ö ÀÌ¸§ ¹× ¼ÒÈ¯/º¹Á¦ ¿©ºÎ (Stack_Name -> z11)
-        { 209, 12 }, // ¹İ°İ È½¼ö °ª (Stack_Retaliation -> z12) [ID 109 ¶óº§ º¸È£]
-        { 31,  13 }, // ÀüÅõ·Â (Stack_FightValue -> z13)
-        { 38,  14 }, // Æ¯¼ö´É·Â ¼³¸í (Mon_Specialty -> z14)
-        { 204, 15 }, // ¿©ºĞ¹ß»çÈ½¼ö °ª (Stack_ExtraShots -> z15) [ID 104 ¶óº§ º¸È£]
-        { 212, 16 }, // »ç±â (Stack_Moral -> z16)
-        { 312, 17 }, // »ç±â ¼³¸í (Stack_Moral_Hint -> z17)
-        { 213, 18 }, // Çà¿î (Stack_Luck -> z18)
-        { 313, 19 }, // Çà¿î ¼³¸í (Stack_Luck_Hint -> z19)
-        { 41,  20 }, // Ãß°¡ ¼³¸í (Stack_etc -> z20)
-        { 36,  21 }  // Àû¿ëµÈ ¸¶¹ı ¸ñ·Ï (Stack_AppliedSpell -> z21)
-    };
+    char origBuf[16];
+    std::snprintf(origBuf, sizeof(origBuf), "%d", stack->originalNumber);
+    MvAddText(dlg, 40, 48, 185, 113, 17, origBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
 
-    for (const auto& mapping : ermMappings)
-    {
-        if (auto *item = dlg->GetH3DlgItem(mapping.itemId))
-        {
-            const char* zText = Era::z[mapping.zIndex];
-            if (zText)
-            {
-                auto *txtItem = static_cast<H3DlgText*>(item);
-                if (txtItem)
-                {
-                    txtItem->SetText(zText);
-                }
-            }
-        }
-    }
+    // ---------- 6. ë°˜ê²©íšŸìˆ˜ (z12)  [í…œí”Œë¦¿ 109/209: 194,185,80,17] ----------
+    std::string retLabel = GetErtText(202761, "{~White}ë°˜ê²©íšŸìˆ˜{~}");
+    MvAddText(dlg, 109, 194, 185, 80, 17, retLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
+    MvAddText(dlg, 209, 194, 185, 80, 17, MvZ(12), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
+
+    // ---------- 7. ì‚¬ê¸° (z16) + ì„¤ëª… (z17)  [í…œí”Œë¦¿ 212/312] ----------
+    MvAddText(dlg, 212, 48, 204, 227, 17, MvZ(16), NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT);
+    MvAddText(dlg, 312, 108, 206, 167, 17, MvZ(17), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+
+    // ---------- 8. í–‰ìš´ (z18) + ì„¤ëª… (z19)  [í…œí”Œë¦¿ 213/313] ----------
+    MvAddText(dlg, 213, 48, 223, 227, 17, MvZ(18), NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT);
+    MvAddText(dlg, 313, 108, 225, 167, 17, MvZ(19), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+
+    // ---------- 9. ì „íˆ¬ë ¥ + ì§€ì†ì‹œê°„ íŒíŠ¸ (z13)  [í…œí”Œë¦¿ 31: 20,244,257,30] ----------
+    MvAddText(dlg, 31, 20, 244, 257, 30, MvZ(13), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+
+    // ---------- 10. íŠ¹ìˆ˜ëŠ¥ë ¥ ë¼ë²¨ + ì„¤ëª… (z14)  [í…œí”Œë¦¿ 37/38] ----------
+    std::string specLabel = GetErtText(202758, "{~White}íŠ¹ìˆ˜ëŠ¥ë ¥:{~}");
+    MvAddText(dlg, 37, 20, 274, 257, 17, specLabel.c_str(), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+    MvAddText(dlg, 38, 20, 289, 257, 56, MvZ(14), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+
+    // ---------- 11. ì¶”ê°€ ì„¤ëª…: ë°©í•´ê´‘ì„ /ë³µì œ ë“± (z20)  [í…œí”Œë¦¿ 41: 20,345,257,30] ----------
+    MvAddText(dlg, 41, 20, 345, 257, 30, MvZ(20), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+
+    // ---------- 12. ì ìš©ëœ ë§ˆë²• (z21)  [í…œí”Œë¦¿ 35/36] ----------
+    const char* applied = MvZ(21);
+    const int appliedCount = MvCountLines(applied);
+    std::string appliedLabel = MvFormatCount(GetErtText(202759, "{~LightBlue}ì ìš©ëœ ë§ˆë²• (%d){~}"), appliedCount);
+    MvAddText(dlg, 35, 287, 108, 141, 17, appliedLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_CENTER);
+    MvAddText(dlg, 36, 286, 137, 145, 188, applied, NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT);
 }
 
 CreatureDlgHandler::CreatureDlgHandler(H3CreatureInfoDlg *dlg, H3CombatCreature *stack, H3Army *army, int armySlotIndex,
@@ -210,7 +265,7 @@ CreatureDlgHandler::CreatureDlgHandler(H3CreatureInfoDlg *dlg, H3CombatCreature 
     if (stack)
     {
         HideDefaultBattleSpellItems();
-        AddSpellEffects();
+        // AddSpellEffects();   // [Multiverse] z21 í…ìŠ¤íŠ¸ ëª©ë¡ìœ¼ë¡œ ëŒ€ì²´
     }
 }
 
@@ -345,47 +400,14 @@ BOOL CreatureDlgHandler::AlignItems()
 
 BOOL CreatureDlgHandler::BuildDescriptionArea()
 {
+    // [Multiverse] ì›ë³¸ ì„¤ëª… ì˜ì—­ì€ ì‚¬ìš©í•˜ì§€ ì•ŠëŠ”ë‹¤. íŠ¹ìˆ˜ëŠ¥ë ¥ì€ AddCustomStats()ì—ì„œ z14ë¡œ ì§ì ‘ ê·¸ë¦¼.
     ResetExperienceSkillsPanel();
-    H3DlgText *description = FindOriginalDescription();
-    const std::string descriptionText = GetDescriptionText(description);
-    if (description)
-        description->HideDeactivate();
-
-    if (GetPluginSettings().showCreatureSkills && !Era::IsCommanderId(dlg->creatureId) && CreateCreatureSkillsList() &&
-        !creatureSkills.empty())
-    {
-        if (BuildExperienceSkillsPanel(description, descriptionText))
-            return TRUE;
-    }
-
     ReleaseUnownedSkillImages();
-    
-    const int customDescY = 255;
-    const int availableHeight = std::max(100, CONTENT_BOTTOM - customDescY);
-
-    std::string specTitle = GetErtText(202758, "{~White}Æ¯¼ö´É·Â:{~}");
-    auto *specLabel = H3DlgText::Create(descriptionX, customDescY - 15, descriptionWidth, 15, 
-                                        specTitle.c_str(), NH3Dlg::Text::TINY, eTextColor::WHITE, 301, eTextAlignment::TOP_LEFT);
-    if (specLabel) dlg->AddItem(specLabel);
-
-    if (description)
-    {
-        description->SetWidth(descriptionWidth);
-        description->SetHeight(availableHeight);
-        description->SetX(descriptionX);
-        description->SetY(customDescY);
-        description->ShowActivate();
-    }
-    else if (!descriptionText.empty())
-    {
-        description =
-            H3DlgText::Create(descriptionX, customDescY, descriptionWidth, availableHeight, descriptionText.c_str(),
-                              NH3Dlg::Text::TINY, eTextColor::WHITE, DLG_DESCRIPTION_ID, eTextAlignment::TOP_LEFT);
-        if (description)
-            dlg->AddItem(description);
-    }
+    if (H3DlgText* description = FindOriginalDescription())
+        description->HideDeactivate();
     return FALSE;
 }
+
 
 BOOL CreatureDlgHandler::AddExperienceButton()
 {
