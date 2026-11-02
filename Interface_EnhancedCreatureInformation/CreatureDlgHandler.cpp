@@ -98,6 +98,7 @@ namespace
 {
     // 템플릿 ID + 30000 → 원본 창 항목이나 daemon 항목과 절대 겹치지 않음
     constexpr int MV_ID_BASE = 30000;
+    constexpr eTextAlignment MV_TOP_CENTER = static_cast<eTextAlignment>(1);   // 0=왼쪽, 1=가운데, 2=오른쪽
 
     bool MvIsEmpty(const char* s)
     {
@@ -168,7 +169,7 @@ void CreatureDlgHandler::AddCustomStats()
         desc->HideDeactivate();
 
     // ---------- 1. 유닛 이름 (z11)  [템플릿 1: 20,23,409,17 가운데] ----------
-    MvAddText(dlg, 1, 20, 23, 409, 17, MvZ(11), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_CENTER);
+    MvAddText(dlg, 1, 20, 23, 409, 17, MvZ(11), NH3Dlg::Text::MEDIUM, MV_TOP_CENTER);
 
     // ---------- 2. 상태  [템플릿 111/211: 311,48] ----------
     std::string statusLabel = GetErtText(202755, "{~White}상태{~}");
@@ -183,13 +184,22 @@ void CreatureDlgHandler::AddCustomStats()
         statusText = GetErtText(202716, "행동 끝");
     MvAddText(dlg, 211, 311, 48, 118, 17, statusText.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
 
-    // ---------- 3. 마법횟수  [템플릿 110/210: 311,67] ----------
-    std::string spellLabel = GetErtText(202756, "{~White}마법횟수{~}");
-    MvAddText(dlg, 110, 311, 67, 110, 17, spellLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
+    // ---------- 3. 마법횟수  [템플릿 110/210: 311,67]  (마법횟수가 있는 유닛만) ----------
+    const int baseCharges = (dlg->creatureId >= 0) ? H3CreatureInformation::Get()[dlg->creatureId].spellCharges : 0;
+    const int curCharges  = stack->info.spellCharges;
+    if (baseCharges > 0 || curCharges > 0)
+    {
+        std::string spellLabel = GetErtText(202756, "{~White}마법횟수{~}");
+        MvAddText(dlg, 110, 311, 67, 110, 17, spellLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
 
-    char spellBuf[16];
-    std::snprintf(spellBuf, sizeof(spellBuf), "%d", stack->info.spellCharges);
-    MvAddText(dlg, 210, 311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
+        char spellBuf[32];
+        if (baseCharges == curCharges)
+            std::snprintf(spellBuf, sizeof(spellBuf), "%d", curCharges);
+        else
+            std::snprintf(spellBuf, sizeof(spellBuf), "%d(%d)", baseCharges, curCharges);
+        MvAddText(dlg, 210, 311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
+    }
+
 
     // ---------- 4. 여분발사횟수  [템플릿 104/204: 311,86]  (사격 유닛만) ----------
     if (stack->info.shooter)
@@ -240,7 +250,7 @@ void CreatureDlgHandler::AddCustomStats()
     const char* applied = MvZ(21);
     const int appliedCount = MvCountLines(applied);
     std::string appliedLabel = MvFormatCount(GetErtText(202759, "{~LightBlue}적용된 마법 (%d){~}"), appliedCount);
-    MvAddText(dlg, 35, 287, 108, 141, 17, appliedLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_CENTER);
+    MvAddText(dlg, 35, 287, 108, 141, 17, appliedLabel.c_str(), NH3Dlg::Text::MEDIUM, MV_TOP_CENTER);
     MvAddText(dlg, 36, 286, 137, 145, 188, applied, NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT);
 }
 
