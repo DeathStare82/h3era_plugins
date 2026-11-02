@@ -209,7 +209,7 @@ void CreatureDlgHandler::AddCustomStats()
     MvAddText(dlg, 30, 48, 185, 113, 17, origLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
 
     char origBuf[16];
-    std::snprintf(origBuf, sizeof(origBuf), "%d", stack->originalNumber);
+    std::snprintf(origBuf, sizeof(origBuf), "%d", *reinterpret_cast<int*>(reinterpret_cast<char*>(stack) + 0x50));
     MvAddText(dlg, 40, 48, 185, 113, 17, origBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
 
     // ---------- 6. 반격횟수 (z12)  [템플릿 109/209: 194,185,80,17] ----------
