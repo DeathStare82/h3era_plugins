@@ -201,26 +201,19 @@ void CreatureDlgHandler::AddCustomStats()
     }
 
 
-    // ---------- 4. 여분발사횟수  [템플릿 104/204: 311,86]  (사격 유닛만) ----------
-    if (stack->info.shooter)
+    // ---------- 4. 여분발사횟수 (z15)  [템플릿 104/204: 311,86]  (ERM이 z15를 채운 사격 유닛만) ----------
+    if (!MvIsEmpty(MvZ(15)))
     {
         std::string shotLabel = GetErtText(202757, "{~White}여분발사횟수{~}");
         MvAddText(dlg, 104, 311, 86, 110, 17, shotLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
-
-        const int targetIndex = (armySlotIndex >= 0 && armySlotIndex < 42) ? armySlotIndex : 0;
-        const int extraShots = Era::v[942 + targetIndex];
-        char shotBuf[16];
-        std::snprintf(shotBuf, sizeof(shotBuf), "%d", extraShots);
-        MvAddText(dlg, 204, 311, 86, 118, 17, shotBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
+        MvAddText(dlg, 204, 311, 86, 118, 17, MvZ(15), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
     }
+
 
     // ---------- 5. 원래 수량 (C++ 직접)  [템플릿 30/40: 48,185,113,17] ----------
     std::string origLabel = GetErtText(202760, "{~White}원래 수량:{~}");
     MvAddText(dlg, 30, 48, 185, 113, 17, origLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
-
-    char origBuf[16];
-    std::snprintf(origBuf, sizeof(origBuf), "%d", *reinterpret_cast<int*>(reinterpret_cast<char*>(stack) + 0x50));
-    MvAddText(dlg, 40, 48, 185, 113, 17, origBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
+    MvAddText(dlg, 40, 48, 185, 113, 17, MvZ(22), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
 
     // ---------- 6. 반격횟수 (z12)  [템플릿 109/209: 194,185,80,17] ----------
     std::string retLabel = GetErtText(202761, "{~White}반격횟수{~}");
@@ -445,6 +438,7 @@ BOOL CreatureDlgHandler::AddExperienceButton()
 
 BOOL CreatureDlgHandler::AddSpellEffects()
 {
+    return FALSE;   // [Multiverse] 마법 목록은 z21 텍스트로 대체 — daemon 아이콘/x턴 표시 비활성화
     if (!stack)
         return FALSE;
     const auto spells = CollectActiveSpells(stack);
