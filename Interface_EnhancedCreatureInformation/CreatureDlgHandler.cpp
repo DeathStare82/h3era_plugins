@@ -252,7 +252,8 @@ void CreatureDlgHandler::AddCustomStats()
     std::string specHint  = GetErtText(202767, "현재 부대가 보유한 고유 특수 능력 정보입니다.");
     
     MvAddText(dlg, 37, 20, 274, 257, 17, specLabel.c_str(), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, specHint.c_str());
-    MvAddText(dlg, 38, 20, 289, 257, 56, MvZ(14), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(14));
+    // 설명 부분(38)의 힌트를 MvZ(14)에서 specHint.c_str()로 변경하여 202767 문구가 뜨도록 통일
+    MvAddText(dlg, 38, 20, 289, 257, 56, MvZ(14), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, specHint.c_str());
 
     // ---------- 11. 추가 설명: 방해광선/복제 등 (z20) ----------
     MvAddText(dlg, 41, 20, 345, 257, 30, MvZ(20), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(20));
@@ -390,7 +391,9 @@ BOOL CreatureDlgHandler::AlignItems()
     if (auto *hint = dlg->GetTextPcx(DLG_HINT_ID))
     {
         hint->SetX(HINT_MARGIN);
-        hint->SetY(DLG_HEIGHT - hint->GetHeight() - HINT_MARGIN);
+        // 기존: hint->SetY(DLG_HEIGHT - hint->GetHeight() - HINT_MARGIN);
+        // 변경: 아래로 5픽셀(칸) 내리기 위해 + 5 추가
+        hint->SetY(DLG_HEIGHT - hint->GetHeight() - HINT_MARGIN + 5); 
         hint->SetWidth(DLG_WIDTH - HINT_MARGIN * 2);
     }
     if (auto *name = dlg->GetText(DLG_NAME_ID))
