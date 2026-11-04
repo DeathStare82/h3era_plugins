@@ -125,12 +125,20 @@ namespace
     }
 
     H3DlgText* MvAddText(H3CreatureInfoDlg* dlg, int templateId, int x, int y, int w, int h,
-                         const char* text, LPCSTR font, eTextAlignment align)
+                         const char* text, LPCSTR font, eTextAlignment align, const char* hint = nullptr)
     {
         if (!dlg || MvIsEmpty(text)) return nullptr;
         auto* item = H3DlgText::Create(x, y, w, h, text, font, eTextColor::WHITE,
                                        MV_ID_BASE + templateId, align);
-        if (item) dlg->AddItem(item);
+        if (item) 
+        {
+            if (hint && *hint)
+            {
+                // 하단 상태바에 힌트 출력 설정
+                item->SetHints(hint, h3_NullString, TRUE);
+            }
+            dlg->AddItem(item);
+        }
         return item;
     }
 
@@ -159,7 +167,7 @@ void CreatureDlgHandler::AddCustomStats()
     if (!dlg || !stack)
         return;
 
-    // ---------- 0. 원본 항목 숨기기: 이름 / 사기 / 행운 / 특수능력 설명 ----------
+    // ---------- 0. 원본 항목 숨기기 ----------
     MvHide(dlg, DLG_NAME_ID);
     MvHide(dlg, DLG_MORALE_ID);
     MvHide(dlg, DLG_MORALE_TEXT_ID);
@@ -168,12 +176,14 @@ void CreatureDlgHandler::AddCustomStats()
     if (auto* desc = FindOriginalDescription())
         desc->HideDeactivate();
 
-    // ---------- 1. 유닛 이름 (z11)  [템플릿 1: 20,23,409,17 가운데] ----------
+    // ---------- 1. 유닛 이름 (z11) ----------
     MvAddText(dlg, 1, 20, 23, 409, 17, MvZ(11), NH3Dlg::Text::MEDIUM, MV_TOP_CENTER);
 
-    // ---------- 2. 상태  [템플릿 111/211: 311,48] ----------
+    // ---------- 2. 상태 (ERT 202762번 힌트 연동) ----------
     std::string statusLabel = GetErtText(202755, "{~White}상태{~}");
-    MvAddText(dlg, 111, 311, 48, 110, 17, statusLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
+    std::string statusHint  = GetErtText(202762, "현재 부대의 전투 행동 상태입니다.");
+    
+    MvAddText(dlg, 111, 311, 48, 110, 17, statusLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT, statusHint.c_str());
 
     std::string statusText = GetErtText(202714, "{~Cyan}행동 전{~}");
     if (stack->IsWaiting())
@@ -182,69 +192,79 @@ void CreatureDlgHandler::AddCustomStats()
         statusText = GetErtText(202717, "방어");
     else if (stack->IsDone())
         statusText = GetErtText(202716, "행동 끝");
-    MvAddText(dlg, 211, 311, 48, 118, 17, statusText.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
+    MvAddText(dlg, 211, 311, 48, 118, 17, statusText.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, statusHint.c_str());
 
-    // ---------- 3. 마법횟수  [템플릿 110/210: 311,67]  (마법횟수가 있는 유닛만) ----------
+    // ---------- 3. 마법횟수 (ERT 202763번 힌트 연동) ----------
     const int baseCharges = (dlg->creatureId >= 0) ? H3CreatureInformation::Get()[dlg->creatureId].spellCharges : 0;
     const int curCharges  = stack->info.spellCharges;
     if (baseCharges > 0 || curCharges > 0)
     {
         std::string spellLabel = GetErtText(202756, "{~White}마법횟수{~}");
-        MvAddText(dlg, 110, 311, 67, 110, 17, spellLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
+        std::string spellHint  = GetErtText(202763, "남은 주문 시전 횟수 / 최대 시전 횟수입니다.");
+        
+        MvAddText(dlg, 110, 311, 67, 110, 17, spellLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT, spellHint.c_str());
 
         char spellBuf[32];
         if (baseCharges == curCharges)
             std::snprintf(spellBuf, sizeof(spellBuf), "%d", curCharges);
         else
             std::snprintf(spellBuf, sizeof(spellBuf), "%d(%d)", baseCharges, curCharges);
-        MvAddText(dlg, 210, 311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
+        MvAddText(dlg, 210, 311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, spellHint.c_str());
     }
 
-
-    // ---------- 4. 여분발사횟수 (z15)  [템플릿 104/204: 311,86]  (ERM이 z15를 채운 사격 유닛만) ----------
+    // ---------- 4. 여분발사횟수 (ERT 202764번 힌트 연동) ----------
     if (!MvIsEmpty(MvZ(15)))
     {
         std::string shotLabel = GetErtText(202757, "{~White}여분발사횟수{~}");
-        MvAddText(dlg, 104, 311, 86, 110, 17, shotLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
-        MvAddText(dlg, 204, 311, 86, 118, 17, MvZ(15), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
+        std::string shotHint  = GetErtText(202764, "이번 전투에서 사용할 수 있는 추가 사격 횟수입니다.");
+        
+        MvAddText(dlg, 104, 311, 86, 110, 17, shotLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT, shotHint.c_str());
+        MvAddText(dlg, 204, 311, 86, 118, 17, MvZ(15), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, shotHint.c_str());
     }
 
-
-    // ---------- 5. 원래 수량 (C++ 직접)  [템플릿 30/40: 48,185,113,17] ----------
+    // ---------- 5. 원래 수량 (ERT 202765번 힌트 연동) ----------
     std::string origLabel = GetErtText(202760, "{~White}원래 수량:{~}");
-    MvAddText(dlg, 30, 48, 185, 113, 17, origLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
-    MvAddText(dlg, 40, 48, 185, 113, 17, MvZ(22), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
+    std::string origHint  = GetErtText(202765, "부대의 소환 또는 부활 전 원래 개체 수입니다.");
+    
+    MvAddText(dlg, 30, 48, 185, 113, 17, origLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT, origHint.c_str());
+    MvAddText(dlg, 40, 48, 185, 113, 17, MvZ(22), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, origHint.c_str());
 
-    // ---------- 6. 반격횟수 (z12)  [템플릿 109/209: 194,185,80,17] ----------
+    // ---------- 6. 반격횟수 (ERT 202766번 힌트 연동) ----------
     std::string retLabel = GetErtText(202761, "{~White}반격횟수{~}");
-    MvAddText(dlg, 109, 194, 185, 80, 17, retLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT);
-    MvAddText(dlg, 209, 194, 185, 80, 17, MvZ(12), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT);
+    std::string retHint  = GetErtText(202766, "이번 턴에 적의 공격에 대응하여 반격할 수 있는 남은 횟수입니다.");
+    
+    MvAddText(dlg, 109, 194, 185, 80, 17, retLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT, retHint.c_str());
+    MvAddText(dlg, 209, 194, 185, 80, 17, MvZ(12), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, retHint.c_str());
 
-    // ---------- 7. 사기 (z16) + 설명 (z17)  [템플릿 212/312] ----------
-    MvAddText(dlg, 212, 48, 204, 227, 17, MvZ(16), NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT);
-    MvAddText(dlg, 312, 108, 206, 167, 17, MvZ(17), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+    // ---------- 7. 사기 (z16) + 설명 (z17) ----------
+    MvAddText(dlg, 212, 48, 204, 227, 17, MvZ(16), NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, MvZ(17));
+    MvAddText(dlg, 312, 108, 206, 167, 17, MvZ(17), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(17));
 
-    // ---------- 8. 행운 (z18) + 설명 (z19)  [템플릿 213/313] ----------
-    MvAddText(dlg, 213, 48, 223, 227, 17, MvZ(18), NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT);
-    MvAddText(dlg, 313, 108, 225, 167, 17, MvZ(19), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+    // ---------- 8. 행운 (z18) + 설명 (z19) ----------
+    MvAddText(dlg, 213, 48, 223, 227, 17, MvZ(18), NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, MvZ(19));
+    MvAddText(dlg, 313, 108, 225, 167, 17, MvZ(19), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(19));
 
-    // ---------- 9. 전투력 + 지속시간 힌트 (z13)  [템플릿 31: 20,244,257,30] ----------
-    MvAddText(dlg, 31, 20, 244, 257, 30, MvZ(13), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+    // ---------- 9. 전투력 + 지속시간 힌트 (z13) ----------
+    MvAddText(dlg, 31, 20, 244, 257, 30, MvZ(13), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(13));
 
-    // ---------- 10. 특수능력 라벨 + 설명 (z14)  [템플릿 37/38] ----------
+    // ---------- 10. 특수능력 라벨 + 설명 (z14) ----------
     std::string specLabel = GetErtText(202758, "{~White}특수능력:{~}");
-    MvAddText(dlg, 37, 20, 274, 257, 17, specLabel.c_str(), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
-    MvAddText(dlg, 38, 20, 289, 257, 56, MvZ(14), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+    std::string specHint  = GetErtText(202767, "현재 부대가 보유한 고유 특수 능력 정보입니다.");
+    
+    MvAddText(dlg, 37, 20, 274, 257, 17, specLabel.c_str(), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, specHint.c_str());
+    MvAddText(dlg, 38, 20, 289, 257, 56, MvZ(14), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(14));
 
-    // ---------- 11. 추가 설명: 방해광선/복제 등 (z20)  [템플릿 41: 20,345,257,30] ----------
-    MvAddText(dlg, 41, 20, 345, 257, 30, MvZ(20), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT);
+    // ---------- 11. 추가 설명: 방해광선/복제 등 (z20) ----------
+    MvAddText(dlg, 41, 20, 345, 257, 30, MvZ(20), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(20));
 
-    // ---------- 12. 적용된 마법 (z21)  [템플릿 35/36] ----------
+    // ---------- 12. 적용된 마법 (z21) (ERT 202768번 힌트 연동) ----------
     const char* applied = MvZ(21);
     const int appliedCount = MvCountLines(applied);
     std::string appliedLabel = MvFormatCount(GetErtText(202759, "{~LightBlue}적용된 마법 (%d){~}"), appliedCount);
-    MvAddText(dlg, 35, 287, 108, 141, 17, appliedLabel.c_str(), NH3Dlg::Text::MEDIUM, MV_TOP_CENTER);
-    MvAddText(dlg, 36, 286, 137, 145, 188, applied, NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT);
+    std::string appliedHint  = GetErtText(202768, "현재 부대에 영향을 주고 있는 마법 및 지속시간 목록입니다.");
+    
+    MvAddText(dlg, 35, 287, 108, 141, 17, appliedLabel.c_str(), NH3Dlg::Text::MEDIUM, MV_TOP_CENTER, appliedHint.c_str());
+    MvAddText(dlg, 36, 286, 137, 145, 188, applied, NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, appliedHint.c_str());
 }
 
 CreatureDlgHandler::CreatureDlgHandler(H3CreatureInfoDlg *dlg, H3CombatCreature *stack, H3Army *army, int armySlotIndex,
