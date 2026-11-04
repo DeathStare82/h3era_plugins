@@ -245,7 +245,8 @@ void CreatureDlgHandler::AddCustomStats()
     MvAddText(dlg, 313, 108, 225, 167, 17, MvZ(19), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(19));
 
     // ---------- 9. 전투력 + 지속시간 힌트 (z13) ----------
-    MvAddText(dlg, 31, 20, 244, 257, 30, MvZ(13), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(13));
+    std::string powerHint = GetErtText(202769, "전투력이 높을수록 걸리는 마법의 지속시간이 짧아짐");
+    MvAddText(dlg, 31, 20, 244, 257, 30, MvZ(13), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, powerHint.c_str());
 
     // ---------- 10. 특수능력 라벨 + 설명 (z14) ----------
     std::string specLabel = GetErtText(202758, "{~White}특수능력:{~}");
