@@ -571,7 +571,8 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
 
             if (!popupText.empty())
             {
-                H3Msgbox::Show(popupText.c_str());
+                // H3Msgbox -> H3MsgBox (대문자 B로 수정)
+                H3MsgBox::Show(popupText.c_str());
                 return TRUE; // 우클릭 처리 완료
             }
         }
