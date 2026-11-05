@@ -538,7 +538,8 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
 
                 case 104: // 여분발사횟수 라벨
                 case 204: // 여분발사횟수 텍스트
-                    popupText = GetErtText(202764, "이번 전투에서 사용할 수 있는 추가 사격 횟수입니다.");
+                    // ★ 우클릭 전용 새 ERT 번호 202770 지정
+                    popupText = GetErtText(202770, "이번 전투에서 사용할 수 있는 추가 사격 횟수입니다.");
                     break;
 
                 case 30:  // 원래 수량 라벨
@@ -552,7 +553,8 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
                     break;
 
                 case 31:  // 전투력
-                    popupText = GetErtText(202769, "전투력이 높을수록 걸리는 마법의 지속시간이 짧아짐");
+                    // ★ 우클릭 전용 새 ERT 번호 202771 지정
+                    popupText = GetErtText(202771, "전투력이 높을수록 걸리는 마법의 지속시간이 짧아짐");
                     break;
 
                 case 37:  // 특수능력 라벨
@@ -571,8 +573,13 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
 
             if (!popupText.empty())
             {
-                // Win32 표준 팝업 메시지 박스 출력
-                MessageBoxA(NULL, popupText.c_str(), "Creature Info", MB_OK | MB_ICONINFORMATION);
+                // 인게임 마우스 위치에 히어로즈 3 스타일 팝업 다이얼로그 출력 (먹통 현상 방지)
+                H3Dlg popup(320, 100);
+                auto* textItem = H3DlgText::Create(20, 20, 280, 60, popupText.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 100, eTextAlignment::MIDDLE_CENTER);
+                if (textItem)
+                    popup.AddItem(textItem);
+                popup.PlaceAtMouse();
+                popup.RMB_Show();
                 return TRUE; // 우클릭 처리 완료
             }
         }
