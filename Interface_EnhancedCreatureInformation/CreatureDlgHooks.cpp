@@ -485,6 +485,7 @@ _LHF_(Dlg_CreatureInfo_RmcProc)
     return EXEC_DEFAULT;
 }
 
+
 int __stdcall H3CreatureInfoDlg_Proc(HiHook *hook, H3CreatureInfoDlg *dlg, H3Msg *msg)
 {
     const int result = THISCALL_2(int, hook->GetDefaultFunc(), dlg, msg);
@@ -517,6 +518,18 @@ int __stdcall H3CreatureInfoDlg_Proc(HiHook *hook, H3CreatureInfoDlg *dlg, H3Msg
         default:
             return result;
         }
+
+        // ---------- [추가] 우클릭 시 커스텀 텍스트/스탯 아이템 우선 처리 ----------
+        if (msg->subtype == eMsgSubtype::RBUTTON_DOWN)
+        {
+            if (auto *handler = GetDialogHandler(dlg))
+            {
+                if (handler->HandleMsg(msg))
+                    return result; // 커스텀 항목 우클릭이 처리되면 이벤트 종료
+            }
+        }
+        // ------------------------------------------------------------------
+
         switch (msg->itemId)
         {
         case WOG_CREATURE_EXP_BUTTON_ID:
@@ -546,6 +559,7 @@ int __stdcall H3CreatureInfoDlg_Proc(HiHook *hook, H3CreatureInfoDlg *dlg, H3Msg
     }
     return result;
 }
+
 
 H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3CreatureInfoDlg *dlg, H3CombatCreature *mon,
                                                           int x, int y, int z)
