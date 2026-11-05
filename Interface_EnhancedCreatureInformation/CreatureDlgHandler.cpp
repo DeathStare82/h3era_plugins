@@ -571,8 +571,8 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
 
             if (!popupText.empty())
             {
-                // H3Msgbox -> H3MsgBox (대문자 B로 수정)
-                H3MsgBox::Show(popupText.c_str());
+                // Win32 표준 팝업 메시지 박스 출력
+                MessageBoxA(NULL, popupText.c_str(), "Creature Info", MB_OK | MB_ICONINFORMATION);
                 return TRUE; // 우클릭 처리 완료
             }
         }
