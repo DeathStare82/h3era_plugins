@@ -506,3 +506,78 @@ BOOL CreatureDlgHandler::AddSpellEffects()
     }
     return TRUE;
 }
+
+
+BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
+{
+    if (!dlg || !msg)
+        return FALSE;
+
+    // 우클릭 이벤트 감지 (RBUTTON_DOWN)
+    if (msg->command == eMsgCommand::MOUSE_BUTTON && msg->subtype == eMsgSubtype::RBUTTON_DOWN)
+    {
+        int itemID = msg->itemId;
+        
+        // 커스텀 생성한 아이템 ID 범위 확인 (MV_ID_BASE = 30000)
+        if (itemID >= 30000 && itemID < 31000)
+        {
+            int templateId = itemID - 30000;
+            std::string popupText = "";
+
+            switch (templateId)
+            {
+                case 111: // 상태 라벨
+                case 211: // 상태 텍스트
+                    popupText = GetErtText(202762, "현재 부대의 전투 행동 상태입니다.");
+                    break;
+
+                case 110: // 마법횟수 라벨
+                case 210: // 마법횟수 텍스트
+                    popupText = GetErtText(202763, "남은 주문 시전 횟수 / 최대 시전 횟수입니다.");
+                    break;
+
+                case 104: // 여분발사횟수 라벨
+                case 204: // 여분발사횟수 텍스트
+                    popupText = GetErtText(202764, "이번 전투에서 사용할 수 있는 추가 사격 횟수입니다.");
+                    break;
+
+                case 30:  // 원래 수량 라벨
+                case 40:  // 원래 수량 텍스트
+                    popupText = GetErtText(202765, "부대의 소환 또는 부활 전 원래 개체 수입니다.");
+                    break;
+
+                case 109: // 반격횟수 라벨
+                case 209: // 반격횟수 텍스트
+                    popupText = GetErtText(202766, "이번 턴에 적의 공격에 대응하여 반격할 수 있는 남은 횟수입니다.");
+                    break;
+
+                case 31:  // 전투력
+                    popupText = GetErtText(202769, "전투력이 높을수록 걸리는 마법의 지속시간이 짧아짐");
+                    break;
+
+                case 37:  // 특수능력 라벨
+                case 38:  // 특수능력 설명
+                    popupText = GetErtText(202767, "현재 부대가 보유한 고유 특수 능력 정보입니다.");
+                    break;
+
+                case 35:  // 적용된 마법 라벨
+                case 36:  // 적용된 마법 목록
+                    popupText = GetErtText(202768, "현재 부대에 영향을 주고 있는 마법 및 지속시간 목록입니다.");
+                    break;
+
+                default:
+                    break;
+            }
+
+            if (!popupText.empty())
+            {
+                H3Msgbox::Show(popupText.c_str());
+                return TRUE; // 우클릭 처리 완료
+            }
+        }
+    }
+
+    return FALSE;
+}
+
+
