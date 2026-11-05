@@ -75,4 +75,5 @@ class CreatureDlgHandler
     BOOL AddSpellEffects();
     BOOL AddCommanderSkills();
     BOOL CreateCreatureSkillsList();
+    BOOL HandleMsg(H3Msg* msg); // 우클릭 팝업 처리를 위한 메서드 선언
 };
