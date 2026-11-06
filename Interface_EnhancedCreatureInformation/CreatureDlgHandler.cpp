@@ -522,113 +522,68 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
         if (itemID >= 30000 && itemID < 31000)
         {
             int templateId = itemID - 30000;
-            std::string titleText = "";
-            std::string bodyText = "";
+            std::string popupText = "";
             
-            int popupWidth = 440;
-            int popupHeight = 160;
+            // 팝업 창 기본 크기 설정 (일반 항목용)
+            int popupWidth = 400;
+            int popupHeight = 150;
 
             switch (templateId)
             {
                 case 111: // 상태 라벨
                 case 211: // 상태 텍스트
-                    bodyText = GetErtText(202762, "현재 부대의 전투 행동 상태입니다.");
-                    popupWidth = 400;
-                    popupHeight = 120;
+                    popupText = GetErtText(202762, "현재 부대의 전투 행동 상태입니다.");
                     break;
 
                 case 110: // 마법횟수 라벨
                 case 210: // 마법횟수 텍스트
-                    bodyText = GetErtText(202763, "남은 주문 시전 횟수 / 최대 시전 횟수입니다.");
-                    popupWidth = 400;
-                    popupHeight = 120;
+                    popupText = GetErtText(202763, "남은 주문 시전 횟수 / 최대 시전 횟수입니다.");
                     break;
 
                 case 104: // 여분발사횟수 라벨
-                case 204: // 여분발사횟수 라벨
-                    titleText = "여분발사 횟수";
-                    bodyText = GetErtText(202770, "멀티버스 모드에만 있는 시스템으로 사격 유닛이 이동이나 방어를 하면 이 수치로 발사횟수를 다시 늘릴 수 있습니다.\n탄약 수레가 있을 경우 이 수치는 항상 최댓값을 유지합니다.");
-                    popupWidth = 460;
-                    popupHeight = 200;
+                case 204: // 여분발사횟수 텍스트
+                    popupText = GetErtText(202770, "멀티버스 모드에만 있는 시스템으로 사격 유닛이 이동이나 방어를 하면 이 수치로 발사횟수를 다시 늘릴 수 있습니다.\n탄약 수레가 있을 경우 이 수치는 항상 최댓값을 유지합니다.");
+                    // ★ 글 내용이 길므로 세로 크기 확대
+                    popupHeight = 240; 
                     break;
 
                 case 30:  // 원래 수량 라벨
                 case 40:  // 원래 수량 텍스트
-                    bodyText = GetErtText(202765, "부대의 소환 또는 부활 전 원래 개체 수입니다.");
-                    popupWidth = 400;
-                    popupHeight = 120;
+                    popupText = GetErtText(202765, "부대의 소환 또는 부활 전 원래 개체 수입니다.");
                     break;
 
                 case 109: // 반격횟수 라벨
                 case 209: // 반격횟수 텍스트
-                    bodyText = GetErtText(202766, "이번 턴에 적의 공격에 대응하여 반격할 수 있는 남은 횟수입니다.");
-                    popupWidth = 400;
-                    popupHeight = 120;
+                    popupText = GetErtText(202766, "이번 턴에 적의 공격에 대응하여 반격할 수 있는 남은 횟수입니다.");
                     break;
 
                 case 31:  // 전투력
-                    titleText = "부대 전투력";
-                    bodyText = GetErtText(202771, "부대의 전투력은 보조/방해 마법의 지속시간을 결정합니다. 전투력이 높은 부대일수록 적용하려는 마법의 지속시간이 짧아지거나 특정 마법의 경우 걸 수 없게 됩니다.\n이런 경우 영웅의 마력이 더 높아야만 마법을 제대로 걸 수 있습니다.");
-                    popupWidth = 460;
-                    popupHeight = 220;
-                    break;
-
-                case 212: // 사기 텍스트
-                case 312: // 사기 설명 텍스트
-                    titleText = "부대 사기";
-                    bodyText = GetErtText(202772, "부대의 사기 수치입니다. 사기가 높을수록 전투 시 추가 행동을 할 확률이 높아집니다.");
-                    popupWidth = 440;
-                    popupHeight = 160;
-                    break;
-
-                case 213: // 행운 텍스트
-                case 313: // 행운 설명 텍스트
-                    titleText = "부대 행운";
-                    bodyText = GetErtText(202773, "부대의 행운 수치입니다. 행운이 높을수록 전투 시 공격 피해량이 2배로 증가할 확률이 높아집니다.");
-                    popupWidth = 440;
-                    popupHeight = 160;
+                    popupText = GetErtText(202771, "부대의 전투력은 보조/방해 마법의 지속시간을 결정합니다. 전투력이 높은 부대일수록 적용하려는 마법의 지속시간이 짧아지거나 특정 마법의 경우 걸 수 없게 됩니다.\n이런 경우 영웅의 마력이 더 높아야만 마법을 제대로 걸 수 있습니다.");
+                    // ★ 글 내용이 길므로 세로 크기 확대
+                    popupHeight = 260; 
                     break;
 
                 case 37:  // 특수능력 라벨
                 case 38:  // 특수능력 설명
-                    bodyText = GetErtText(202767, "현재 부대가 보유한 고유 특수 능력 정보입니다.");
-                    popupWidth = 400;
-                    popupHeight = 120;
+                    popupText = GetErtText(202767, "현재 부대가 보유한 고유 특수 능력 정보입니다.");
                     break;
 
                 case 35:  // 적용된 마법 라벨
                 case 36:  // 적용된 마법 목록
-                    bodyText = GetErtText(202768, "현재 부대에 영향을 주고 있는 마법 및 지속시간 목록입니다.");
-                    popupWidth = 400;
-                    popupHeight = 120;
+                    popupText = GetErtText(202768, "현재 부대에 영향을 주고 있는 마법 및 지속시간 목록입니다.");
                     break;
 
                 default:
                     break;
             }
 
-            if (!bodyText.empty())
+            if (!popupText.empty())
             {
+                // 동적으로 설정된 크기(popupWidth, popupHeight)를 적용하여 다이얼로그 생성
                 H3Dlg popup(popupWidth, popupHeight);
                 
-                int bodyY = 24;
-                
-                // 제목이 있는 경우 노란색 강조 텍스트(가운데 정렬)로 상단에 독립 추가
-                if (!titleText.empty())
-                {
-                    auto* titleItem = H3DlgText::Create(20, 20, popupWidth - 40, 24, 
-                                                      titleText.c_str(), NH3Dlg::Text::SMALL, 
-                                                      eTextColor::YELLOW, 100, eTextAlignment::MIDDLE_CENTER);
-                    if (titleItem)
-                        popup.AddItem(titleItem);
-                        
-                    bodyY = 52; // 본문 시작 위치를 아래로 이동
-                }
-                
-                // 본문 텍스트 추가 (독립 레이아웃)
-                auto* textItem = H3DlgText::Create(24, bodyY, popupWidth - 48, popupHeight - bodyY - 20, 
-                                                 bodyText.c_str(), NH3Dlg::Text::SMALL, 
-                                                 eTextColor::WHITE, 100, eTextAlignment::TOP_LEFT);
+                // 텍스트 영역도 창 크기에 맞춰 여유 있게 조절 (좌우 패딩 각 20씩, 높이는 창 높이에 맞춤)
+                auto* textItem = H3DlgText::Create(20, 20, popupWidth - 40, popupHeight - 40, popupText.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 100, eTextAlignment::MIDDLE_CENTER);
                 if (textItem)
                     popup.AddItem(textItem);
                     
