@@ -523,6 +523,10 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
         {
             int templateId = itemID - 30000;
             std::string popupText = "";
+            
+            // 팝업 창 기본 크기 설정 (일반 항목용)
+            int popupWidth = 400;
+            int popupHeight = 150;
 
             switch (templateId)
             {
@@ -538,8 +542,9 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
 
                 case 104: // 여분발사횟수 라벨
                 case 204: // 여분발사횟수 텍스트
-                    // ★ 우클릭 전용 새 ERT 번호 202770 지정
-                    popupText = GetErtText(202770, "이번 전투에서 사용할 수 있는 추가 사격 횟수입니다.");
+                    popupText = GetErtText(202770, "멀티버스 모드에만 있는 시스템으로 사격 유닛이 이동이나 방어를 하면 이 수치로 발사횟수를 다시 늘릴 수 있습니다.\n탄약 수레가 있을 경우 이 수치는 항상 최댓값을 유지합니다.");
+                    // ★ 글 내용이 길므로 세로 크기 확대
+                    popupHeight = 240; 
                     break;
 
                 case 30:  // 원래 수량 라벨
@@ -553,8 +558,9 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
                     break;
 
                 case 31:  // 전투력
-                    // ★ 우클릭 전용 새 ERT 번호 202771 지정
-                    popupText = GetErtText(202771, "전투력이 높을수록 걸리는 마법의 지속시간이 짧아짐");
+                    popupText = GetErtText(202771, "부대의 전투력은 보조/방해 마법의 지속시간을 결정합니다. 전투력이 높은 부대일수록 적용하려는 마법의 지속시간이 짧아지거나 특정 마법의 경우 걸 수 없게 됩니다.\n이런 경우 영웅의 마력이 더 높아야만 마법을 제대로 걸 수 있습니다.");
+                    // ★ 글 내용이 길므로 세로 크기 확대
+                    popupHeight = 260; 
                     break;
 
                 case 37:  // 특수능력 라벨
@@ -573,12 +579,11 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
 
             if (!popupText.empty())
             {
-                // 인게임 마우스 위치에 히어로즈 3 스타일 팝업 다이얼로그 출력 (먹통 현상 방지)
-                // 다이얼로그 크기를 400x150으로 확대 (필요에 따라 조절 가능)
-                H3Dlg popup(400, 150);
+                // 동적으로 설정된 크기(popupWidth, popupHeight)를 적용하여 다이얼로그 생성
+                H3Dlg popup(popupWidth, popupHeight);
                 
-                // 내부 텍스트 영역도 크기에 맞춰 확장 (예: 360x110)
-                auto* textItem = H3DlgText::Create(20, 20, 360, 110, popupText.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 100, eTextAlignment::MIDDLE_CENTER);
+                // 텍스트 영역도 창 크기에 맞춰 여유 있게 조절 (좌우 패딩 각 20씩, 높이는 창 높이에 맞춤)
+                auto* textItem = H3DlgText::Create(20, 20, popupWidth - 40, popupHeight - 40, popupText.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 100, eTextAlignment::MIDDLE_CENTER);
                 if (textItem)
                     popup.AddItem(textItem);
                     
