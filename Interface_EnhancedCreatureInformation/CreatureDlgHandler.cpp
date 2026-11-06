@@ -563,6 +563,20 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
                     popupHeight = 260; 
                     break;
 
+                case 212: // 사기 텍스트
+                case 312: // 사기 설명 텍스트
+                    popupText = GetErtText(202772, "{부대 사기}\n\n부대의 사기 수치입니다. 사기가 높을수록 전투 시 추가 행동을 할 확률이 높아집니다.");
+                    popupWidth = 460;
+                    popupHeight = 200;
+                    break;
+
+                case 213: // 행운 텍스트
+                case 313: // 행운 설명 텍스트
+                    popupText = GetErtText(202773, "{부대 행운}\n\n부대의 행운 수치입니다. 행운이 높을수록 전투 시 공격 피해량이 2배로 증가할 확률이 높아집니다.");
+                    popupWidth = 460;
+                    popupHeight = 200;
+                    break;
+                
                 case 37:  // 특수능력 라벨
                 case 38:  // 특수능력 설명
                     popupText = GetErtText(202767, "현재 부대가 보유한 고유 특수 능력 정보입니다.");
