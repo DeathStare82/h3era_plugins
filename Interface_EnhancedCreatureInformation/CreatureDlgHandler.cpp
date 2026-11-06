@@ -574,10 +574,14 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
             if (!popupText.empty())
             {
                 // 인게임 마우스 위치에 히어로즈 3 스타일 팝업 다이얼로그 출력 (먹통 현상 방지)
-                H3Dlg popup(320, 100);
-                auto* textItem = H3DlgText::Create(20, 20, 280, 60, popupText.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 100, eTextAlignment::MIDDLE_CENTER);
+                // 다이얼로그 크기를 400x150으로 확대 (필요에 따라 조절 가능)
+                H3Dlg popup(400, 150);
+                
+                // 내부 텍스트 영역도 크기에 맞춰 확장 (예: 360x110)
+                auto* textItem = H3DlgText::Create(20, 20, 360, 110, popupText.c_str(), NH3Dlg::Text::SMALL, eTextColor::WHITE, 100, eTextAlignment::MIDDLE_CENTER);
                 if (textItem)
                     popup.AddItem(textItem);
+                    
                 popup.PlaceAtMouse();
                 popup.RMB_Show();
                 return TRUE; // 우클릭 처리 완료
