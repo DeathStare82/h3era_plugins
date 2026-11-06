@@ -524,7 +524,6 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
             int templateId = itemID - 30000;
             std::string popupText = "";
             
-            // 팝업 창 기본 크기 (일반 항목용)
             int popupWidth = 400;
             int popupHeight = 150;
 
@@ -541,8 +540,8 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
                     break;
 
                 case 104: // 여분발사횟수 라벨
-                case 204: // 여분발사횟수 텍스트
-                    popupText = GetErtText(202770, "{여분발사 횟수}\n\n멀티버스 모드에만 있는 시스템으로 사격 유닛이 이동이나 방어를 하면 이 수치로 발사횟수를 다시 늘릴 수 있습니다.\n탄약 수레가 있을 경우 이 수치는 항상 최댓값을 유지합니다.");
+                case 204: // 여분발사횟수 라벨
+                    popupText = GetErtText(202770, "여분발사 횟수\n\n멀티버스 모드에만 있는 시스템으로 사격 유닛이 이동이나 방어를 하면 이 수치로 발사횟수를 다시 늘릴 수 있습니다.\n탄약 수레가 있을 경우 이 수치는 항상 최댓값을 유지합니다.");
                     popupWidth = 460;
                     popupHeight = 220;
                     break;
@@ -558,21 +557,21 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
                     break;
 
                 case 31:  // 전투력
-                    popupText = GetErtText(202771, "{부대 전투력}\n\n부대의 전투력은 보조/방해 마법의 지속시간을 결정합니다. 전투력이 높은 부대일수록 적용하려는 마법의 지속시간이 짧아지거나 특정 마법의 경우 걸 수 없게 됩니다.\n이런 경우 영웅의 마력이 더 높아야만 마법을 제대로 걸 수 있습니다.");
+                    popupText = GetErtText(202771, "부대 전투력\n\n부대의 전투력은 보조/방해 마법의 지속시간을 결정합니다. 전투력이 높은 부대일수록 적용하려는 마법의 지속시간이 짧아지거나 특정 마법의 경우 걸 수 없게 됩니다.\n이런 경우 영웅의 마력이 더 높아야만 마법을 제대로 걸 수 있습니다.");
                     popupWidth = 460;
                     popupHeight = 240;
                     break;
 
                 case 212: // 사기 텍스트
                 case 312: // 사기 설명 텍스트
-                    popupText = GetErtText(202772, "{부대 사기}\n\n부대의 사기 수치입니다. 사기가 높을수록 전투 시 추가 행동을 할 확률이 높아집니다.");
+                    popupText = GetErtText(202772, "부대 사기\n\n부대의 사기 수치입니다. 사기가 높을수록 전투 시 추가 행동을 할 확률이 높아집니다.");
                     popupWidth = 460;
                     popupHeight = 200;
                     break;
 
                 case 213: // 행운 텍스트
                 case 313: // 행운 설명 텍스트
-                    popupText = GetErtText(202773, "{부대 행운}\n\n부대의 행운 수치입니다. 행운이 높을수록 전투 시 공격 피해량이 2배로 증가할 확률이 높아집니다.");
+                    popupText = GetErtText(202773, "부대 행운\n\n부대의 행운 수치입니다. 행운이 높을수록 전투 시 공격 피해량이 2배로 증가할 확률이 높아집니다.");
                     popupWidth = 460;
                     popupHeight = 200;
                     break;
@@ -595,9 +594,10 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
             {
                 H3Dlg popup(popupWidth, popupHeight);
                 
+                // ★ 텍스트 정렬을 다시 가운데 정렬(MIDDLE_CENTER)로 적용
                 auto* textItem = H3DlgText::Create(24, 24, popupWidth - 48, popupHeight - 48, 
                                                  popupText.c_str(), NH3Dlg::Text::SMALL, 
-                                                 eTextColor::WHITE, 100, eTextAlignment::TOP_LEFT);
+                                                 eTextColor::WHITE, 100, eTextAlignment::MIDDLE_CENTER);
                 if (textItem)
                     popup.AddItem(textItem);
                     
