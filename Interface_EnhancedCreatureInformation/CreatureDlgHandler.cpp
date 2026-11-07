@@ -177,6 +177,25 @@ namespace
     constexpr int MV_V_SPELL_RMB_HANDLED = 992;   // v992 = ERM이 안내창을 띄웠으면 1
     constexpr LPCSTR MV_EVT_SPELL_RMB    = "OnMvAppliedSpellRmb";
 
+    // 게임 내부 안내창 (마법책 우클릭 창, ERM IF:Q 와 같은 함수)
+    //   style 4 = 우클릭을 누르고 있는 동안만 표시 / 그림 종류 9 = 마법 (SPELLSCR 그림 + 아래에 마법 이름)
+    //   창 크기는 글 길이에 맞춰 게임이 알아서 정한다.
+    using MvNativeMessageBox = void(__fastcall *)(const char* text, int style, int x, int y,
+                                                  int type1, int subtype1, int type2, int subtype2,
+                                                  int par, int time, int type3, int subtype3);
+    constexpr DWORD MV_NATIVE_MESSAGE_BOX = 0x4F6C00;
+    constexpr int   MV_MSGBOX_RMB = 4;
+    constexpr int   MV_PIC_SPELL  = 9;
+
+    void MvShowSpellRmbBox(const char* text, int spellId)
+    {
+        const bool hasPicture = spellId >= 0 && spellId < MV_SPELL_SLOT_COUNT;
+        reinterpret_cast<MvNativeMessageBox>(MV_NATIVE_MESSAGE_BOX)(
+            text, MV_MSGBOX_RMB, -1, -1,
+            hasPicture ? MV_PIC_SPELL : -1, hasPicture ? spellId : 0,
+            -1, 0, -1, 0, -1, 0);
+    }
+
     struct MvSpellRef
     {
         int spellId;
@@ -288,7 +307,7 @@ void CreatureDlgHandler::BuildAppliedSpellList(int x, int y, int width, int heig
 // 적용된 마법 한 줄을 우클릭했을 때
 //   기본: v990(효과 칸 번호)/v991(걸린 수준)을 넣고 ERM 이벤트 OnMvAppliedSpellRmb 호출
 //         → ERM이 그 수준으로 설명을 만들어 IF:Q로 띄우고 v992=1
-//   예비: v992가 0이면(ERM 쪽이 처리 안 함) C++ 안내창 — 제목은 목록의 그 줄, 본문은 게임에 저장된 현재 설명
+//   예비: v992가 0이면(ERM 쪽이 처리 안 함) 게임에 저장된 현재 설명을 같은 내부 안내창으로 띄움
 BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
 {
     if (row < 0 || row >= static_cast<int>(appliedSpellRows.size()))
@@ -310,7 +329,8 @@ BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
             return TRUE;
     }
 
-    // 2) ERM이 처리하지 않았을 때(트리거 없음, 영웅 정보 없음 등)만 아래 C++ 안내창
+    // 2) ERM이 처리하지 않았을 때(트리거 없음, 영웅 정보 없음 등): 게임에 저장된 현재 설명을 그대로
+    //    설명 글 맨 앞의 "{고급 마법 방패}" 제목도 설명 안에 들어 있으므로 따로 붙이지 않는다.
     std::string body;
     if (validSpell)
     {
@@ -321,45 +341,7 @@ BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
     if (MvIsEmpty(body.c_str()))
         body = GetErtText(MV_ERT_SPELL_NO_DESC, "이 효과에 대한 설명이 없습니다.");
 
-    constexpr int POPUP_WIDTH = 340;
-    constexpr int PADDING = 18;
-    constexpr int GAP = 8;
-    const int textWidth = POPUP_WIDTH - PADDING * 2;
-
-    // 아이콘: daemon 원본이 전투 효과 표시에 쓰던 작은 마법 아이콘
-    H3DefLoader iconDef(NH3Dlg::Assets::SPELL_SMALL);
-    const bool hasIcon = validSpell && iconDef.Get() && iconDef->widthDEF > 0 && iconDef->heightDEF > 0;
-    const int iconHeight = hasIcon ? iconDef->heightDEF : 0;
-
-    const MvTextMetrics titleM = MvMeasure(NH3Dlg::Text::MEDIUM, entry.text.c_str(), textWidth, 18);
-    const MvTextMetrics bodyM  = MvMeasure(NH3Dlg::Text::SMALL, body.c_str(), textWidth, 16);
-    const int titleHeight = titleM.lineHeight * titleM.lines;
-    const int bodyHeight  = bodyM.lineHeight * bodyM.lines;
-
-    const int popupHeight = PADDING + (hasIcon ? iconHeight + GAP : 0) + titleHeight + GAP + bodyHeight + PADDING;
-
-    H3Dlg popup(POPUP_WIDTH, popupHeight);
-    int y = PADDING;
-
-    if (hasIcon)
-    {
-        if (auto* icon = H3DlgDef::Create((POPUP_WIDTH - iconDef->widthDEF) / 2, y, iconDef->GetName(),
-                                          spellId + SPELL_DEF_FRAME_OFFSET))
-            popup.AddItem(icon);
-        y += iconHeight + GAP;
-    }
-
-    if (auto* title = H3DlgText::Create(PADDING, y, textWidth, titleHeight, entry.text.c_str(),
-                                        NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 101, MV_TOP_CENTER))
-        popup.AddItem(title);
-    y += titleHeight + GAP;
-
-    if (auto* text = H3DlgText::Create(PADDING, y, textWidth, bodyHeight, body.c_str(),
-                                       NH3Dlg::Text::SMALL, eTextColor::WHITE, 102, MV_TOP_CENTER))
-        popup.AddItem(text);
-
-    popup.PlaceAtMouse();
-    popup.RMB_Show();
+    MvShowSpellRmbBox(body.c_str(), spellId);
     return TRUE;
 }
 
