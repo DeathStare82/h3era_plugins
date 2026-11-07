@@ -22,12 +22,13 @@ class CreatureDlgHandler
         int baseY = 0;
     };
 
-    // [Multiverse] 적용된 마법 목록의 한 줄 (z21의 n번째 줄 ↔ z23의 n번째 "번호:레벨")
+    // [Multiverse] 적용된 마법 목록의 한 줄 (z21의 n번째 줄 ↔ z23의 n번째 "효과칸:마법번호:레벨")
     struct AppliedSpellRow
     {
-        int spellId = -1;   // ERM 루프의 r (BM:G 슬롯 번호 = 주문 번호)
-        int level = 0;      // 0=기본, 1=초급, 2=중급, 3=고급
-        std::string text;   // z21의 해당 줄 그대로 (색상 태그 포함)
+        int spellId = -1;     // ERM 루프의 r (BM:G 효과 칸 번호)
+        int spellCode = -1;   // Fix_Code_for_AppliedSpell 결과 s (목록 이름·설명·그림 기준, 81 이상은 스크롤 마법)
+        int level = 0;        // 0=기본, 1=초급, 2=중급, 3=고급
+        std::string text;     // z21의 해당 줄 그대로 (색상 태그 포함)
     };
 
     H3CreatureInfoDlg *dlg = nullptr;

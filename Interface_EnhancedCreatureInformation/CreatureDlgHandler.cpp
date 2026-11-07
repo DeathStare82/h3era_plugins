@@ -170,13 +170,6 @@ namespace
     constexpr int MV_ERT_SPELL_ROW_HINT  = 202774;  // 행 위 마우스오버 힌트
     constexpr int MV_ERT_SPELL_NO_DESC   = 202775;  // 설명을 찾지 못했을 때
 
-    // ERM 연동: 적용된 마법 줄 우클릭 → ERM(!?FU(OnMvAppliedSpellRmb))이 설명을 만들어 IF:Q로 띄운다.
-    // v 번호가 이미 쓰이는 중이면 여기와 ERM 양쪽을 같이 바꿀 것.
-    constexpr int MV_V_SPELL_RMB_ID      = 990;   // v990 = 효과 칸 번호 (ERM 루프의 r)
-    constexpr int MV_V_SPELL_RMB_LEVEL   = 991;   // v991 = 걸린 수준 (0=기본 ~ 3=고급)
-    constexpr int MV_V_SPELL_RMB_HANDLED = 992;   // v992 = ERM이 안내창을 띄웠으면 1
-    constexpr LPCSTR MV_EVT_SPELL_RMB    = "OnMvAppliedSpellRmb";
-
     // 게임 내부 안내창 (마법책 우클릭 창, ERM IF:Q 와 같은 함수)
     //   style 4 = 우클릭을 누르고 있는 동안만 표시 / 그림 종류 9 = 마법 (SPELLSCR 그림 + 아래에 마법 이름)
     //   창 크기는 글 길이에 맞춰 게임이 알아서 정한다.
@@ -187,6 +180,7 @@ namespace
     constexpr int   MV_MSGBOX_RMB = 4;
     constexpr int   MV_PIC_SPELL  = 9;
 
+    // spellId < 0 이면 그림 없이 글만 (단순 메시지)
     void MvShowSpellRmbBox(const char* text, int spellId)
     {
         const bool hasPicture = spellId >= 0 && spellId < MV_SPELL_SLOT_COUNT;
@@ -196,11 +190,61 @@ namespace
             -1, 0, -1, 0, -1, 0);
     }
 
+    // ERM(CM4)이 줄마다 "걸린 수준" 기준으로 미리 만들어 두는 안내문: z901 + 줄번호 (최대 20줄)
+    // z 번호가 이미 쓰이는 중이면 여기와 ERM 양쪽을 같이 바꿀 것.
+    constexpr int MV_Z_SPELL_POPUP_FIRST = 901;
+    constexpr int MV_Z_SPELL_POPUP_MAX   = 20;
+
+    // 안내창 대신 단순 메시지를 띄우는 효과 칸 (r) 과 그 ERT
+    constexpr int MV_SLOT_OGRE_ROAR = 39;   // 오우거의 함성
+    constexpr int MV_SLOT_HYPNOTIZE = 60;   // 최면
+    constexpr int MV_ERT_OGRE_ROAR  = 202776;
+    constexpr int MV_ERT_HYPNOTIZE  = 202777;
+
+    // 스크롤 전용 마법(81번~): 스크롤 마법책 우클릭(ERM)과 같은 방식
+    //   SPELLSCR 80번 그림을 Data\defs\SPELLSCR\0_<번호>.png 로 바꾸고, 80번 마법 이름을 잠깐 바꿔서 보여준다.
+    constexpr int MV_SCROLL_SPELL_FIRST   = 81;
+    constexpr int MV_SCROLL_SPELL_LAST    = 200;
+    constexpr int MV_SCROLL_PICTURE_SLOT  = 80;
+
     struct MvSpellRef
     {
-        int spellId;
+        int spellId;     // r
+        int spellCode;   // s (없으면 r)
         int level;
     };
+
+    // "{~LightGreen}...{~}" 같은 색상 태그 제거
+    std::string MvStripColorTags(const std::string& s)
+    {
+        std::string out;
+        for (size_t i = 0; i < s.size(); ++i)
+        {
+            if (s[i] == '{' && i + 1 < s.size() && s[i + 1] == '~')
+            {
+                const size_t close = s.find('}', i);
+                if (close == std::string::npos) break;
+                i = close;
+                continue;
+            }
+            out += s[i];
+        }
+        return out;
+    }
+
+    // z21 한 줄 "(중급)마법의 힘 3턴" → "마법의 힘"
+    std::string MvSpellNameFromRow(const std::string& rowText)
+    {
+        const std::string t = MvStripColorTags(rowText);
+        const size_t paren = t.find(')');
+        const size_t start = (paren == std::string::npos) ? 0 : paren + 1;
+        size_t end = t.rfind(' ');
+        if (end == std::string::npos || end < start) end = t.size();
+        std::string name = t.substr(start, end - start);
+        const size_t first = name.find_first_not_of(' ');
+        const size_t last = name.find_last_not_of(' ');
+        return first == std::string::npos ? std::string() : name.substr(first, last - first + 1);
+    }
 
     // z21 → 줄 단위로 분리 (MvCountLines와 같은 기준)
     std::vector<std::string> MvSplitLines(const char* s)
@@ -218,7 +262,8 @@ namespace
         return out;
     }
 
-    // z23 = "41:3 46:0 " 형식 → {번호, 레벨} 목록
+    // z23 = "0:82:2 46:46:0 " (효과칸:마법번호:레벨) 형식 → 목록
+    //       예전 형식 "46:0 " (효과칸:레벨)도 읽는다 (그때는 마법번호 = 효과칸)
     std::vector<MvSpellRef> MvParseSpellRefs(const char* s)
     {
         std::vector<MvSpellRef> out;
@@ -227,9 +272,12 @@ namespace
         std::string token;
         while (in >> token)
         {
-            int id = -1, lv = 0;
-            if (std::sscanf(token.c_str(), "%d:%d", &id, &lv) >= 1)
-                out.push_back({id, lv});
+            int a = -1, b = 0, c = 0;
+            const int n = std::sscanf(token.c_str(), "%d:%d:%d", &a, &b, &c);
+            if (n >= 3)
+                out.push_back({a, b, c});
+            else if (n >= 1)
+                out.push_back({a, a, n >= 2 ? b : 0});
         }
         return out;
     }
@@ -294,6 +342,7 @@ void CreatureDlgHandler::BuildAppliedSpellList(int x, int y, int width, int heig
 
         AppliedSpellRow row;
         row.spellId = refs[i].spellId;
+        row.spellCode = refs[i].spellCode;
         row.level = refs[i].level;
         row.text = lines[i];
         appliedSpellRows.push_back(row);   // 인덱스 i == 템플릿 ID (500 + i)
@@ -304,44 +353,78 @@ void CreatureDlgHandler::BuildAppliedSpellList(int x, int y, int width, int heig
     }
 }
 
-// 적용된 마법 한 줄을 우클릭했을 때
-//   기본: v990(효과 칸 번호)/v991(걸린 수준)을 넣고 ERM 이벤트 OnMvAppliedSpellRmb 호출
-//         → ERM이 그 수준으로 설명을 만들어 IF:Q로 띄우고 v992=1
-//   예비: v992가 0이면(ERM 쪽이 처리 안 함) 게임에 저장된 현재 설명을 같은 내부 안내창으로 띄움
+// 적용된 마법 한 줄을 우클릭했을 때 (마법책 우클릭과 같은 게임 내부 안내창)
+//   본문: ERM(CM4)이 "걸린 수준" 기준으로 미리 만들어 둔 z901+줄번호
+//         비어 있으면(ERM 쪽 미적용) 게임에 저장된 현재 설명 / 스크롤 마법은 z(400+번호)
+//   그림: 효과 칸 39(오우거의 함성)·60(최면) → 그림 없이 단순 메시지
+//         0~80번 → SPELLSCR 해당 그림 / 81번~(스크롤 마법) → 80번 그림을 바꿔서 표시
 BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
 {
     if (row < 0 || row >= static_cast<int>(appliedSpellRows.size()))
         return FALSE;
 
     const AppliedSpellRow &entry = appliedSpellRows[row];
-    const int spellId = entry.spellId;
+    const int slot = entry.spellId;                                   // r
+    const int code = entry.spellCode >= 0 ? entry.spellCode : slot;   // s
     const int level = Clamp(0, entry.level, 3);
-    const bool validSpell = spellId >= 0 && spellId < MV_SPELL_SLOT_COUNT;
+    const bool simpleMessage = slot == MV_SLOT_OGRE_ROAR || slot == MV_SLOT_HYPNOTIZE;
+    const bool normalSpell = code >= 0 && code < MV_SPELL_SLOT_COUNT;
+    const bool scrollSpell = code >= MV_SCROLL_SPELL_FIRST && code <= MV_SCROLL_SPELL_LAST;
 
-    // 1) ERM에게 먼저 맡긴다: 걸린 수준으로 설명을 만들어 IF:Q로 띄움
-    if (validSpell)
-    {
-        Era::v[MV_V_SPELL_RMB_ID] = spellId;
-        Era::v[MV_V_SPELL_RMB_LEVEL] = level;
-        Era::v[MV_V_SPELL_RMB_HANDLED] = 0;
-        Era::FireEvent(MV_EVT_SPELL_RMB, nullptr, 0);
-        if (Era::v[MV_V_SPELL_RMB_HANDLED])
-            return TRUE;
-    }
-
-    // 2) ERM이 처리하지 않았을 때(트리거 없음, 영웅 정보 없음 등): 게임에 저장된 현재 설명을 그대로
-    //    설명 글 맨 앞의 "{고급 마법 방패}" 제목도 설명 안에 들어 있으므로 따로 붙이지 않는다.
+    // ---------- 본문 ----------
     std::string body;
-    if (validSpell)
+    if (row < MV_Z_SPELL_POPUP_MAX)
+        body = MvZ(MV_Z_SPELL_POPUP_FIRST + row);
+
+    if (MvIsEmpty(body.c_str()))
     {
-        const char* desc = H3Spell::Get()[spellId].description[level];
-        if (!MvIsEmpty(desc))
-            body = desc;
+        if (slot == MV_SLOT_OGRE_ROAR)
+            body = GetErtText(MV_ERT_OGRE_ROAR, "{오우거의 함성}");
+        else if (slot == MV_SLOT_HYPNOTIZE)
+            body = GetErtText(MV_ERT_HYPNOTIZE, "{최면}");
+        else if (normalSpell)
+        {
+            const char* desc = H3Spell::Get()[code].description[level];
+            if (!MvIsEmpty(desc))
+                body = desc;
+        }
+        else if (scrollSpell)
+            body = MvZ(400 + code);   // H3_Set_Spell_Descriptions가 채워 두는 z481~
     }
     if (MvIsEmpty(body.c_str()))
         body = GetErtText(MV_ERT_SPELL_NO_DESC, "이 효과에 대한 설명이 없습니다.");
 
-    MvShowSpellRmbBox(body.c_str(), spellId);
+    // ---------- 그림 + 표시 ----------
+    if (simpleMessage)
+    {
+        MvShowSpellRmbBox(body.c_str(), -1);
+    }
+    else if (normalSpell)
+    {
+        MvShowSpellRmbBox(body.c_str(), code);
+    }
+    else if (scrollSpell)
+    {
+        // 스크롤 마법책 우클릭(ERM)과 같은 방식:
+        //   !!SN:R^SPELLSCR.def:0_80.png^/^Data\defs\SPELLSCR\0_<번호>.png^;  + 80번 마법 이름을 잠깐 교체
+        char picture[64];
+        std::snprintf(picture, sizeof(picture), "Data\\defs\\SPELLSCR\\0_%d.png", code);
+        Era::RedirectFile("SPELLSCR.def:0_80.png", picture);
+
+        H3Spell &pictureSpell = H3Spell::Get()[MV_SCROLL_PICTURE_SLOT];
+        const auto oldName = pictureSpell.name;
+        const std::string scrollName = MvSpellNameFromRow(entry.text);
+        if (!scrollName.empty())
+            pictureSpell.name = scrollName.c_str();
+
+        MvShowSpellRmbBox(body.c_str(), MV_SCROLL_PICTURE_SLOT);
+
+        pictureSpell.name = oldName;   // 이름은 원래대로 (그림 교체는 ERM 쪽과 마찬가지로 그대로 둠)
+    }
+    else
+    {
+        MvShowSpellRmbBox(body.c_str(), -1);
+    }
     return TRUE;
 }
 
