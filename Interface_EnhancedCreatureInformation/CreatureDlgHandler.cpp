@@ -159,9 +159,191 @@ namespace
         else fmt += buf;
         return fmt;
     }
+
+    // ---------------------------------------------------------------
+    // [Multiverse] 적용된 마법 개별 행 + 우클릭 안내 팝업
+    // ---------------------------------------------------------------
+    constexpr int MV_SPELL_ROW_FIRST     = 500;     // 템플릿 ID 500~579 → 아이템 ID 30500~30579
+    constexpr int MV_SPELL_ROW_MAX       = 80;
+    constexpr int MV_SPELL_SLOT_COUNT    = 81;      // ERM 루프 r = 0~80
+    constexpr int MV_ERT_SPELL_ROW_HINT  = 202774;  // 행 위 마우스오버 힌트
+    constexpr int MV_ERT_SPELL_NO_DESC   = 202775;  // 설명을 찾지 못했을 때
+    constexpr int MV_ERT_SPELL_DESC_BASE = 202800;  // 202800 + 마법 번호 = 마법별 커스텀 설명
+
+    struct MvSpellRef
+    {
+        int spellId;
+        int level;
+    };
+
+    // z21 → 줄 단위로 분리 (MvCountLines와 같은 기준)
+    std::vector<std::string> MvSplitLines(const char* s)
+    {
+        std::vector<std::string> out;
+        if (MvIsEmpty(s)) return out;
+        std::string cur;
+        for (; *s; ++s)
+        {
+            if (*s == '\r') continue;
+            if (*s == '\n') { out.push_back(cur); cur.clear(); }
+            else cur += *s;
+        }
+        out.push_back(cur);
+        return out;
+    }
+
+    // z23 = "41:3 46:0 " 형식 → {번호, 레벨} 목록
+    std::vector<MvSpellRef> MvParseSpellRefs(const char* s)
+    {
+        std::vector<MvSpellRef> out;
+        if (MvIsEmpty(s)) return out;
+        std::istringstream in(s);
+        std::string token;
+        while (in >> token)
+        {
+            int id = -1, lv = 0;
+            if (std::sscanf(token.c_str(), "%d:%d", &id, &lv) >= 1)
+                out.push_back({id, lv});
+        }
+        return out;
+    }
+
+    // 폰트 기준 줄 높이 / 줄 수 (긴 마법 이름이 두 줄로 넘어가도 잘리지 않게)
+    // ※ H3FontLoader / height / GetLinesCountInText 에서 컴파일 오류가 나면
+    //    이 함수 본문을 "return {fallbackLineHeight, 1};" 로 바꿔도 동작합니다.
+    struct MvTextMetrics
+    {
+        int lineHeight;
+        int lines;
+    };
+
+    MvTextMetrics MvMeasure(LPCSTR fontName, const char* text, int width, int fallbackLineHeight)
+    {
+        MvTextMetrics m{fallbackLineHeight, 1};
+        H3FontLoader font(fontName);
+        if (H3Font* f = font.Get())
+        {
+            if (f->height > 0)
+                m.lineHeight = f->height;
+            if (!MvIsEmpty(text))
+            {
+                const int n = f->GetLinesCountInText(text, width);
+                if (n > 0) m.lines = n;
+            }
+        }
+        return m;
+    }
 }
 
-// 커스텀 유닛 정보창 전체 배치 (z11~z21 + C++ 계산값)
+// 적용된 마법 목록을 "한 줄 = 한 아이템"으로 만든다.
+// z21(표시 문자열)과 z23(번호:레벨)은 ERM의 같은 루프에서 같은 순서로 쌓이므로 n번째끼리 짝이 맞는다.
+void CreatureDlgHandler::BuildAppliedSpellList(int x, int y, int width, int height, const std::string &fallbackHint)
+{
+    appliedSpellRows.clear();
+
+    const char* applied = MvZ(21);
+    if (MvIsEmpty(applied))
+        return;
+
+    const std::vector<std::string> lines = MvSplitLines(applied);
+    const std::vector<MvSpellRef> refs = MvParseSpellRefs(MvZ(23));
+
+    // ERM이 z23을 아직 안 채웠거나 줄 수가 어긋나면 → 예전처럼 통짜 텍스트(우클릭 시 202768 공통 안내)
+    if (refs.size() != lines.size())
+    {
+        MvAddText(dlg, 36, x, y, width, height, applied, NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, fallbackHint.c_str());
+        return;
+    }
+
+    const std::string rowHint = GetErtText(MV_ERT_SPELL_ROW_HINT, "{~y}우클릭{~}: 이 마법의 상세 정보 보기");
+    const int bottom = y + height;
+    int rowY = y;
+
+    for (size_t i = 0; i < lines.size() && i < static_cast<size_t>(MV_SPELL_ROW_MAX); ++i)
+    {
+        const MvTextMetrics m = MvMeasure(NH3Dlg::Text::SMALL, lines[i].c_str(), width, 16);
+        const int rowHeight = m.lineHeight * m.lines;
+        if (rowY + rowHeight > bottom)
+            break; // 영역(286,137 ~ 145x188)을 넘으면 더 그리지 않음
+
+        AppliedSpellRow row;
+        row.spellId = refs[i].spellId;
+        row.level = refs[i].level;
+        row.text = lines[i];
+        appliedSpellRows.push_back(row);   // 인덱스 i == 템플릿 ID (500 + i)
+
+        MvAddText(dlg, MV_SPELL_ROW_FIRST + static_cast<int>(i), x, rowY, width, rowHeight,
+                  lines[i].c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, rowHint.c_str());
+        rowY += rowHeight;
+    }
+}
+
+// 적용된 마법 한 줄을 우클릭했을 때 뜨는 안내 창
+//   제목: 목록에 보이는 그 줄 그대로 (색/레벨/지속시간)
+//   본문: ① ERT 202800+번호  →  ② 게임 기본 주문 설명(SPTRAITS, 해당 레벨)  →  ③ ERT 202775
+BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
+{
+    if (row < 0 || row >= static_cast<int>(appliedSpellRows.size()))
+        return FALSE;
+
+    const AppliedSpellRow &entry = appliedSpellRows[row];
+    const int spellId = entry.spellId;
+    const int level = Clamp(0, entry.level, 3);
+    const bool validSpell = spellId >= 0 && spellId < MV_SPELL_SLOT_COUNT;
+
+    std::string body = validSpell ? GetErtText(MV_ERT_SPELL_DESC_BASE + spellId) : std::string();
+    if (MvIsEmpty(body.c_str()) && validSpell)
+    {
+        const char* desc = H3Spell::Get()[spellId].description[level];
+        if (!MvIsEmpty(desc))
+            body = desc;
+    }
+    if (MvIsEmpty(body.c_str()))
+        body = GetErtText(MV_ERT_SPELL_NO_DESC, "이 효과에 대한 설명이 없습니다.");
+
+    constexpr int POPUP_WIDTH = 340;
+    constexpr int PADDING = 18;
+    constexpr int GAP = 8;
+    const int textWidth = POPUP_WIDTH - PADDING * 2;
+
+    // 아이콘: daemon 원본이 전투 효과 표시에 쓰던 작은 마법 아이콘
+    H3DefLoader iconDef(NH3Dlg::Assets::SPELL_SMALL);
+    const bool hasIcon = validSpell && iconDef.Get() && iconDef->widthDEF > 0 && iconDef->heightDEF > 0;
+    const int iconHeight = hasIcon ? iconDef->heightDEF : 0;
+
+    const MvTextMetrics titleM = MvMeasure(NH3Dlg::Text::MEDIUM, entry.text.c_str(), textWidth, 18);
+    const MvTextMetrics bodyM  = MvMeasure(NH3Dlg::Text::SMALL, body.c_str(), textWidth, 16);
+    const int titleHeight = titleM.lineHeight * titleM.lines;
+    const int bodyHeight  = bodyM.lineHeight * bodyM.lines;
+
+    const int popupHeight = PADDING + (hasIcon ? iconHeight + GAP : 0) + titleHeight + GAP + bodyHeight + PADDING;
+
+    H3Dlg popup(POPUP_WIDTH, popupHeight);
+    int y = PADDING;
+
+    if (hasIcon)
+    {
+        if (auto* icon = H3DlgDef::Create((POPUP_WIDTH - iconDef->widthDEF) / 2, y, iconDef->GetName(),
+                                          spellId + SPELL_DEF_FRAME_OFFSET))
+            popup.AddItem(icon);
+        y += iconHeight + GAP;
+    }
+
+    if (auto* title = H3DlgText::Create(PADDING, y, textWidth, titleHeight, entry.text.c_str(),
+                                        NH3Dlg::Text::MEDIUM, eTextColor::WHITE, 101, MV_TOP_CENTER))
+        popup.AddItem(title);
+    y += titleHeight + GAP;
+
+    if (auto* text = H3DlgText::Create(PADDING, y, textWidth, bodyHeight, body.c_str(),
+                                       NH3Dlg::Text::SMALL, eTextColor::WHITE, 102, MV_TOP_CENTER))
+        popup.AddItem(text);
+
+    popup.PlaceAtMouse();
+    popup.RMB_Show();
+    return TRUE;
+}
+
+// 커스텀 유닛 정보창 전체 배치 (z11~z23 + C++ 계산값)
 void CreatureDlgHandler::AddCustomStats()
 {
     if (!dlg || !stack)
@@ -259,14 +441,15 @@ void CreatureDlgHandler::AddCustomStats()
     // ---------- 11. 추가 설명: 방해광선/복제 등 (z20) ----------
     MvAddText(dlg, 41, 20, 345, 257, 30, MvZ(20), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(20));
 
-    // ---------- 12. 적용된 마법 (z21) (ERT 202768번 힌트 연동) ----------
+    // ---------- 12. 적용된 마법 (z21 표시 + z23 번호:레벨) (ERT 202768번 힌트 연동) ----------
     const char* applied = MvZ(21);
     const int appliedCount = MvCountLines(applied);
     std::string appliedLabel = MvFormatCount(GetErtText(202759, "{~LightBlue}적용된 마법 (%d){~}"), appliedCount);
     std::string appliedHint  = GetErtText(202768, "현재 부대에 영향을 주고 있는 마법 및 지속시간 목록입니다.");
-    
+
     MvAddText(dlg, 35, 287, 108, 141, 17, appliedLabel.c_str(), NH3Dlg::Text::MEDIUM, MV_TOP_CENTER, appliedHint.c_str());
-    MvAddText(dlg, 36, 286, 137, 145, 188, applied, NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, appliedHint.c_str());
+    // 기존: 통짜 텍스트 1개(템플릿 36) → 변경: 마법 한 줄마다 개별 아이템(템플릿 500+n)
+    BuildAppliedSpellList(286, 137, 145, 188, appliedHint);
 }
 
 CreatureDlgHandler::CreatureDlgHandler(H3CreatureInfoDlg *dlg, H3CombatCreature *stack, H3Army *army, int armySlotIndex,
@@ -522,6 +705,11 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
         if (itemID >= 30000 && itemID < 31000)
         {
             int templateId = itemID - 30000;
+
+            // [추가] 적용된 마법 개별 행 → 해당 마법 안내 창
+            if (templateId >= MV_SPELL_ROW_FIRST && templateId < MV_SPELL_ROW_FIRST + MV_SPELL_ROW_MAX)
+                return ShowAppliedSpellPopup(templateId - MV_SPELL_ROW_FIRST);
+
             std::string popupText = "";
             
             // 팝업 창 기본 크기 설정 (일반 항목용)
