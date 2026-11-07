@@ -86,7 +86,13 @@ void CreatureDlgHandler::HideDefaultBattleSpellItems()
     if (!dlg)
         return;
 
+    // 원본 창의 걸린 마법 아이콘
     for (int id = DLG_NATIVE_SPELL_FIRST_ID; id <= DLG_NATIVE_SPELL_LAST_ID; ++id)
+        if (auto *item = dlg->GetH3DlgItem(id))
+            item->HideDeactivate();
+
+    // [Multiverse] 원본 창의 아이콘 아래 지속시간 글자 ("x1", "x12" 등) — 아이콘만 숨기면 이 글자가 남는다
+    for (int id = DLG_NATIVE_SPELL_TEXT_FIRST_ID; id <= DLG_NATIVE_SPELL_TEXT_LAST_ID; ++id)
         if (auto *item = dlg->GetH3DlgItem(id))
             item->HideDeactivate();
 }
