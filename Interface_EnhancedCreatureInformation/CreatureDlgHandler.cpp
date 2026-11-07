@@ -166,9 +166,16 @@ namespace
     constexpr int MV_SPELL_ROW_FIRST     = 500;     // 템플릿 ID 500~579 → 아이템 ID 30500~30579
     constexpr int MV_SPELL_ROW_MAX       = 80;
     constexpr int MV_SPELL_SLOT_COUNT    = 81;      // ERM 루프 r = 0~80
+    // ERT 번호 2개 (ERT에 없으면 아래 코드의 기본 문구 사용. 이미 쓰는 번호라면 여기만 바꾸면 됨)
     constexpr int MV_ERT_SPELL_ROW_HINT  = 202774;  // 행 위 마우스오버 힌트
     constexpr int MV_ERT_SPELL_NO_DESC   = 202775;  // 설명을 찾지 못했을 때
-    constexpr int MV_ERT_SPELL_DESC_BASE = 202800;  // 202800 + 마법 번호 = 마법별 커스텀 설명
+
+    // ERM 연동: 적용된 마법 줄 우클릭 → ERM(!?FU(OnMvAppliedSpellRmb))이 설명을 만들어 IF:Q로 띄운다.
+    // v 번호가 이미 쓰이는 중이면 여기와 ERM 양쪽을 같이 바꿀 것.
+    constexpr int MV_V_SPELL_RMB_ID      = 990;   // v990 = 효과 칸 번호 (ERM 루프의 r)
+    constexpr int MV_V_SPELL_RMB_LEVEL   = 991;   // v991 = 걸린 수준 (0=기본 ~ 3=고급)
+    constexpr int MV_V_SPELL_RMB_HANDLED = 992;   // v992 = ERM이 안내창을 띄웠으면 1
+    constexpr LPCSTR MV_EVT_SPELL_RMB    = "OnMvAppliedSpellRmb";
 
     struct MvSpellRef
     {
@@ -278,9 +285,10 @@ void CreatureDlgHandler::BuildAppliedSpellList(int x, int y, int width, int heig
     }
 }
 
-// 적용된 마법 한 줄을 우클릭했을 때 뜨는 안내 창
-//   제목: 목록에 보이는 그 줄 그대로 (색/레벨/지속시간)
-//   본문: ① ERT 202800+번호  →  ② 게임 기본 주문 설명(SPTRAITS, 해당 레벨)  →  ③ ERT 202775
+// 적용된 마법 한 줄을 우클릭했을 때
+//   기본: v990(효과 칸 번호)/v991(걸린 수준)을 넣고 ERM 이벤트 OnMvAppliedSpellRmb 호출
+//         → ERM이 그 수준으로 설명을 만들어 IF:Q로 띄우고 v992=1
+//   예비: v992가 0이면(ERM 쪽이 처리 안 함) C++ 안내창 — 제목은 목록의 그 줄, 본문은 게임에 저장된 현재 설명
 BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
 {
     if (row < 0 || row >= static_cast<int>(appliedSpellRows.size()))
@@ -291,8 +299,20 @@ BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
     const int level = Clamp(0, entry.level, 3);
     const bool validSpell = spellId >= 0 && spellId < MV_SPELL_SLOT_COUNT;
 
-    std::string body = validSpell ? GetErtText(MV_ERT_SPELL_DESC_BASE + spellId) : std::string();
-    if (MvIsEmpty(body.c_str()) && validSpell)
+    // 1) ERM에게 먼저 맡긴다: 걸린 수준으로 설명을 만들어 IF:Q로 띄움
+    if (validSpell)
+    {
+        Era::v[MV_V_SPELL_RMB_ID] = spellId;
+        Era::v[MV_V_SPELL_RMB_LEVEL] = level;
+        Era::v[MV_V_SPELL_RMB_HANDLED] = 0;
+        Era::FireEvent(MV_EVT_SPELL_RMB, nullptr, 0);
+        if (Era::v[MV_V_SPELL_RMB_HANDLED])
+            return TRUE;
+    }
+
+    // 2) ERM이 처리하지 않았을 때(트리거 없음, 영웅 정보 없음 등)만 아래 C++ 안내창
+    std::string body;
+    if (validSpell)
     {
         const char* desc = H3Spell::Get()[spellId].description[level];
         if (!MvIsEmpty(desc))
@@ -798,5 +818,3 @@ BOOL CreatureDlgHandler::HandleMsg(H3Msg* msg)
 
     return FALSE;
 }
-
-
