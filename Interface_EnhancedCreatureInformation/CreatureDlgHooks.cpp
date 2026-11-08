@@ -72,6 +72,7 @@ struct CreatureDialogBuildContext
 {
     CreatureDialogKind kind = CreatureDialogKind::None;
     H3CreatureInfoDlg *dlg = nullptr;
+    H3CombatCreature *stack = nullptr; // [Multiverse] 전투 창일 때 그 부대 (선제공격 속도 표시용)
 };
 
 CreatureDialogBuildContext g_buildContexts[MAX_BUILD_CONTEXT_DEPTH];
@@ -97,12 +98,13 @@ class CreatureDialogBuildScope
     bool pushed = false;
 
   public:
-    CreatureDialogBuildScope(CreatureDialogKind kind, H3CreatureInfoDlg *dlg)
+    CreatureDialogBuildScope(CreatureDialogKind kind, H3CreatureInfoDlg *dlg, H3CombatCreature *stack = nullptr)
     {
         if (g_buildContextDepth < static_cast<int>(sizeof(g_buildContexts) / sizeof(g_buildContexts[0])))
         {
             g_buildContexts[g_buildContextDepth].kind = kind;
             g_buildContexts[g_buildContextDepth].dlg = dlg;
+            g_buildContexts[g_buildContextDepth].stack = stack;
             ++g_buildContextDepth;
             pushed = true;
         }
@@ -180,6 +182,53 @@ int ResolveAdventureDialogColor(const H3Hero *hero)
 bool SameResource(LPCSTR lhs, LPCSTR rhs)
 {
     return lhs && rhs && libc::strcmpi(lhs, rhs) == 0;
+}
+
+// [Multiverse] 선제공격 마법: 자기 턴이 아닐 때 속도 +1000
+//   정보창의 속도 글자에서만 1000을 뺀다. 실제 부대 속도는 건드리지 않는다.
+//   예) "6(1006)" → "6",  "6(1007)" → "6(7)",  "1006" → "6"
+//   속도 글자인지는 "첫 숫자 = 그 유닛의 속도"로 확인하므로 생명력 등 다른 줄은 바뀌지 않는다.
+LPCSTR HidePreemptiveSpeed(LPCSTR text, const H3CombatCreature *stack, char (&buf)[32])
+{
+    constexpr int PREEMPTIVE_SPEED_BONUS = 1000;
+    if (!text || !stack || stack->type < 0)
+        return text;
+
+    int first = 0, second = 0, used = 0;
+    bool hasSecond = false;
+    if (std::sscanf(text, " %d (%d ) %n", &first, &second, &used) == 2 && text[used] == '\0')
+        hasSecond = true;
+    else
+    {
+        used = 0;
+        if (!(std::sscanf(text, " %d %n", &first, &used) == 1 && text[used] == '\0'))
+            return text; // "숫자" 또는 "숫자(숫자)" 모양이 아니면 그대로
+    }
+
+    const int tableSpeed = H3CreatureInformation::Get()[stack->type].speed; // 유닛 표의 속도
+    const int stackSpeed = stack->info.speed;                               // 지금 부대의 속도 (+1000 포함)
+    if (first != tableSpeed && first != stackSpeed)
+        return text; // 속도 줄이 아님
+
+    bool changed = false;
+    if (first >= PREEMPTIVE_SPEED_BONUS)
+    {
+        first -= PREEMPTIVE_SPEED_BONUS;
+        changed = true;
+    }
+    if (hasSecond && second >= PREEMPTIVE_SPEED_BONUS)
+    {
+        second -= PREEMPTIVE_SPEED_BONUS;
+        changed = true;
+    }
+    if (!changed)
+        return text;
+
+    if (hasSecond && second != first)
+        std::snprintf(buf, sizeof(buf), "%d(%d)", first, second);
+    else
+        std::snprintf(buf, sizeof(buf), "%d", first);
+    return buf;
 }
 
 bool IsBattleGeneratedReturnAddress(DWORD returnAddress)
@@ -310,8 +359,13 @@ H3DlgText *__stdcall CreatureDlg_TextCtor(HiHook *hook, H3DlgText *item, int x, 
                                           int unused)
 {
     auto *ctx = ActiveBuildContext();
+    char speedBuf[32]; // 아래 원래 함수가 글자를 복사해 가므로 이 함수 안에서만 살아 있으면 됨
     if (ctx != nullptr)
     {
+        // [Multiverse] 선제공격(+1000) 부대의 속도 글자에서 1000 빼기 (전투 창만)
+        if (ctx->kind == CreatureDialogKind::Battle && ctx->stack)
+            text = HidePreemptiveSpeed(text, ctx->stack, speedBuf);
+
         const DWORD ret = static_cast<DWORD>(hook->GetReturnAddress());
         switch (itemId)
         {
@@ -579,7 +633,7 @@ H3CreatureInfoDlg *__stdcall H3CreatureInfoDlg_BattleCtor(HiHook *hook, H3Creatu
     y = Clamp(0, y - BATTLE_DIALOG_POSITION_OFFSET, maxY);
     H3CreatureInfoDlg *result = nullptr;
     {
-        CreatureDialogBuildScope scope(CreatureDialogKind::Battle, dlg);
+        CreatureDialogBuildScope scope(CreatureDialogKind::Battle, dlg, mon);
         result = THISCALL_5(H3CreatureInfoDlg *, hook->GetDefaultFunc(), dlg, mon, x, y, z);
     }
     if (result)

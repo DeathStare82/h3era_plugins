@@ -441,54 +441,26 @@ BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
 // =====================================================================
 namespace
 {
-    // C++ → ERM 으로 부르는 함수 이름. ERM 에서는 !?FU(Mv_CreatureInfo_NonBattle); 로 받는다.
-    //   주고받는 값은 그 함수의 x 변수(x1~x5)만 쓰므로 v/z 변수를 차지하지 않는다.
-    constexpr const char* MV_ERM_NONBATTLE_FUNC = "Mv_CreatureInfo_NonBattle";
-
     // 새 ERT 번호 4개 (ERT에 없으면 아래 코드의 기본 문구 사용. 이미 쓰는 번호라면 여기만 바꾸면 됨)
     constexpr int MV_ERT_NB_MORALE      = 202778;  // "사기: %s"   (%s 자리에 +7 같은 값)
     constexpr int MV_ERT_NB_LUCK        = 202779;  // "행운: %s"
     constexpr int MV_ERT_NB_MORALE_HINT = 202780;  // 사기 줄 마우스오버 힌트
     constexpr int MV_ERT_NB_LUCK_HINT   = 202781;  // 행운 줄 마우스오버 힌트
 
-    struct MvNonBattleErmResult
+    // 여분발사횟수: 전투 때 ERM과 같은 조건 (사격 유닛만, 투석기 145·쇠뇌 146·화살탑 149 제외)
+    //   값은 ERM이 게임 시작 때 !!SN:W^<번호>_Monster_Extra_Shots^/값; 으로 저장해 둔 것을 직접 읽는다.
+    //   (SN:W 변수 = ERA 전역 이름 변수라서 C++에서 GetAssocVarIntValue로 바로 읽을 수 있음)
+    //   사격 유닛이 아니면 -1 (= 표시 안 함)
+    int MvExtraShots(int creatureId)
     {
-        int extraShots = -1;     // ERM x4 (-1 = 표시 안 함)
-        int retaliations = -1;   // ERM x5 (-1 = C++ 기본값)
-    };
+        if (creatureId == 145 || creatureId == 146 || creatureId == 149)
+            return -1;
+        if (H3CreatureInformation::Get()[creatureId].numberShots <= 0)
+            return -1;
 
-    // ERM 함수 FU(Mv_CreatureInfo_NonBattle) 실행
-    //   보내는 값: x1 = 유닛 번호, x2 = 부대 수량(모르면 0), x3 = 영웅 번호(없으면 -1)
-    //   받는 값:   x4 = 여분발사횟수, x5 = 반격횟수 (보통은 -1 그대로 두면 타이푼 에디터 값 사용)
-    //   ERM 쪽에 함수가 없으면 아무 일도 일어나지 않고 기본값(-1)이 그대로 남는다.
-    MvNonBattleErmResult MvCallNonBattleErm(int creatureId, int count, int heroId)
-    {
-        MvNonBattleErmResult result;
-
-        int funcId = 0;
-        Era::AllocErmFunc(MV_ERM_NONBATTLE_FUNC, funcId);
-        Era::TXVars* args = Era::GetArgXVars();
-        if (funcId == 0 || !args)
-            return result;
-
-        for (int i = 0; i < 16; ++i)
-            (*args)[i] = 0;
-        (*args)[0] = creatureId;   // x1
-        (*args)[1] = count;        // x2
-        (*args)[2] = heroId;       // x3
-        (*args)[3] = -1;           // x4
-        (*args)[4] = -1;           // x5
-
-        Era::FireErmEvent(funcId);
-
-        // x1이 보낸 값 그대로면 이번 호출의 결과로 보고 x4, x5를 읽는다
-        Era::TXVars* ret = Era::GetRetXVars();
-        if (ret && (*ret)[0] == creatureId)
-        {
-            result.extraShots = (*ret)[3];
-            result.retaliations = (*ret)[4];
-        }
-        return result;
+        char varName[48];
+        std::snprintf(varName, sizeof(varName), "%d_Monster_Extra_Shots", creatureId);
+        return Era::GetAssocVarIntValue(varName);
     }
 
     // ---------------------------------------------------------------
@@ -616,15 +588,14 @@ void CreatureDlgHandler::AddNonBattleStats()
     int count = 0;                                    // 부대 수량 (고용창처럼 알 수 없으면 0)
     if (army && armySlotIndex >= 0 && armySlotIndex < 7)
         count = army->count[armySlotIndex];
-    const int heroId = hero ? hero->id : -1;          // 영웅 번호 (없으면 -1)
 
     int morale = 0;
     int luck = 0;
     const bool hasMorale = MvReadNativeNumber(dlg, DLG_MORALE_TEXT_ID, morale);
     const bool hasLuck = MvReadNativeNumber(dlg, DLG_LUCK_TEXT_ID, luck);
 
-    // ERM 함수 실행 → 여분발사횟수(x4), 반격횟수(x5)
-    const MvNonBattleErmResult erm = MvCallNonBattleErm(creatureId, count, heroId);
+    const int extraShots = MvExtraShots(creatureId);             // 여분발사횟수 (-1 = 사격 유닛 아님)
+    const int retaliations = MvCreatureRetaliations(creatureId); // 반격횟수 (타이푼 에디터 값)
 
     // ---------- 1. 마법횟수 (유닛 기본값, MA:B로 바꾼 값도 그대로 반영됨) ----------
     const int charges = H3CreatureInformation::Get()[creatureId].spellCharges;
@@ -639,12 +610,12 @@ void CreatureDlgHandler::AddNonBattleStats()
         MvAddText(dlg, 210, 311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, spellHint.c_str());
     }
 
-    // ---------- 2. 여분발사횟수 (ERM이 x4로 돌려준 값) ----------
-    if (erm.extraShots >= 0)
+    // ---------- 2. 여분발사횟수 (ERM SN:W 값) ----------
+    if (extraShots >= 0)
     {
         const std::string shotLabel = GetErtText(202757, "{~White}여분발사횟수{~}");
         const std::string shotHint  = GetErtText(202764, "이번 전투에서 사용할 수 있는 추가 사격 횟수입니다.");
-        const std::string shotValue = MvWhiteNumber(erm.extraShots);
+        const std::string shotValue = MvWhiteNumber(extraShots);
         MvAddText(dlg, 104, 311, 86, 110, 17, shotLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT, shotHint.c_str());
         MvAddText(dlg, 204, 311, 86, 118, 17, shotValue.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, shotHint.c_str());
     }
@@ -659,9 +630,8 @@ void CreatureDlgHandler::AddNonBattleStats()
         MvAddText(dlg, 40, 48, 185, 113, 17, origValue.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, origHint.c_str());
     }
 
-    // ---------- 4. 반격횟수 (타이푼 에디터 값 / ERM이 x5를 정했으면 그 값 / 100 이상은 ∞) ----------
+    // ---------- 4. 반격횟수 (타이푼 에디터 값 / 100 이상은 ∞) ----------
     {
-        const int retaliations = erm.retaliations >= 0 ? erm.retaliations : MvCreatureRetaliations(creatureId);
         const std::string retValue = retaliations > 99 ? "{~White}" + GetErtText(202712, "∞") + "{~}"
                                                        : MvWhiteNumber(retaliations);
         const std::string retLabel = GetErtText(202761, "{~White}반격횟수{~}");
