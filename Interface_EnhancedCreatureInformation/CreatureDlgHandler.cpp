@@ -459,7 +459,7 @@ namespace
 
     // ERM 함수 FU(Mv_CreatureInfo_NonBattle) 실행
     //   보내는 값: x1 = 유닛 번호, x2 = 부대 수량(모르면 0), x3 = 영웅 번호(없으면 -1)
-    //   받는 값:   x4 = 여분발사횟수, x5 = 반격횟수
+    //   받는 값:   x4 = 여분발사횟수, x5 = 반격횟수 (보통은 -1 그대로 두면 타이푼 에디터 값 사용)
     //   ERM 쪽에 함수가 없으면 아무 일도 일어나지 않고 기본값(-1)이 그대로 남는다.
     MvNonBattleErmResult MvCallNonBattleErm(int creatureId, int count, int heroId)
     {
@@ -491,12 +491,64 @@ namespace
         return result;
     }
 
-    // ERM이 반격횟수를 정해 주지 않았을 때의 기본값 (원래 게임 규칙)
-    int MvDefaultRetaliations(int creatureId)
+    // ---------------------------------------------------------------
+    // [Multiverse] 타이푼 에디터(MCrEdit)의 MonstersSetup.mop 에서 반격횟수 읽기
+    //   파일 구조 (유닛 1000칸 기준, 바이트 위치)
+    //     0     ~ 15999 : 전투 DEF 이름 (16바이트씩)
+    //     16000 ~ 20999 : 소리 이름 (5바이트씩)
+    //     21000 ~ 24999 : 플래그 (4바이트씩)
+    //     25000 ~ 26999 : 다른 표 2개 (1바이트씩)
+    //     27000 ~ 27999 : 반격횟수 (1바이트씩, -1 = 무제한, 0 = 반격 불가)
+    //   게임 실행 후 처음 한 번만 읽는다. 파일 크기가 다르면(형식이 바뀌면) 쓰지 않고 기본값 1로 표시.
+    // ---------------------------------------------------------------
+    constexpr int  MV_MOP_SLOTS              = 1000;
+    constexpr long MV_MOP_FILE_SIZE          = 254000;
+    constexpr long MV_MOP_RETALIATION_OFFSET = 27000;
+    constexpr int  MV_RETALIATION_UNLIMITED  = 999;   // 100 이상은 ∞ 로 표시됨
+
+    std::vector<signed char> g_mopRetaliations;       // 비어 있으면 파일을 못 읽은 것
+    bool g_mopLoaded = false;
+
+    void MvLoadMopRetaliations()
     {
-        if (creatureId == 4) return 2;     // 그리핀: 반격 2회
-        if (creatureId == 5) return 999;   // 로열 그리핀: 무제한 (∞ 로 표시)
-        return 1;
+        if (g_mopLoaded)
+            return;
+        g_mopLoaded = true;
+
+        // 첫 번째: ERA가 모드 폴더를 합쳐서 보여 주는 경로 / 두 번째: 실제 폴더 경로
+        const char* paths[] = {
+            "EraPlugins/MCrEdit/MonstersSetup.mop",
+            "Mods/New Upgrade Mod/EraPlugins/MCrEdit/MonstersSetup.mop",
+        };
+        for (const char* path : paths)
+        {
+            std::ifstream file(path, std::ios::binary);
+            if (!file.is_open())
+                continue;
+
+            file.seekg(0, std::ios::end);
+            if (static_cast<long>(file.tellg()) != MV_MOP_FILE_SIZE)
+                continue;
+
+            std::vector<char> buf(MV_MOP_SLOTS);
+            file.seekg(MV_MOP_RETALIATION_OFFSET, std::ios::beg);
+            if (!file.read(buf.data(), MV_MOP_SLOTS))
+                continue;
+
+            g_mopRetaliations.assign(buf.begin(), buf.end());
+            return;
+        }
+    }
+
+    // 유닛의 반격횟수 (타이푼 에디터 값, 무제한 = 999). 파일을 못 읽었으면 1
+    int MvCreatureRetaliations(int creatureId)
+    {
+        MvLoadMopRetaliations();
+        if (creatureId < 0 || creatureId >= static_cast<int>(g_mopRetaliations.size()))
+            return 1;
+
+        const int value = g_mopRetaliations[creatureId];
+        return value < 0 ? MV_RETALIATION_UNLIMITED : value;
     }
 
     // 원래 창 아래쪽의 사기/행운 숫자 글자("+7", "0", "-2")를 읽는다. 글자가 없으면 false
@@ -607,9 +659,9 @@ void CreatureDlgHandler::AddNonBattleStats()
         MvAddText(dlg, 40, 48, 185, 113, 17, origValue.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, origHint.c_str());
     }
 
-    // ---------- 4. 반격횟수 (ERM x5, 없으면 기본값 / 100 이상은 ∞) ----------
+    // ---------- 4. 반격횟수 (타이푼 에디터 값 / ERM이 x5를 정했으면 그 값 / 100 이상은 ∞) ----------
     {
-        const int retaliations = erm.retaliations >= 0 ? erm.retaliations : MvDefaultRetaliations(creatureId);
+        const int retaliations = erm.retaliations >= 0 ? erm.retaliations : MvCreatureRetaliations(creatureId);
         const std::string retValue = retaliations > 99 ? "{~White}" + GetErtText(202712, "∞") + "{~}"
                                                        : MvWhiteNumber(retaliations);
         const std::string retLabel = GetErtText(202761, "{~White}반격횟수{~}");
