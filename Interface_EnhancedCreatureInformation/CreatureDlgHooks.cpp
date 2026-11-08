@@ -295,6 +295,9 @@ H3DlgPcx *__stdcall CreatureDlg_PcxCtor(HiHook *hook, H3DlgPcx *item, int x, int
         else if (NATIVE_DISMISS_FRAME_RECT.Matches(x, y, width, height))
         {
             x = CAST_BUTTON_X;
+            // [Multiverse] 비전투 창: 해고 버튼 테두리도 버튼과 같은 거리만큼 오른쪽으로 (버튼은 AlignItems에서 이동)
+            if (ctx->kind != CreatureDialogKind::Battle)
+                x += CreatureDlgHandler::NONBATTLE_DISMISS_SHIFT_X;
             y = BUTTON_Y - BUTTON_FRAME_BORDER;
         }
     }

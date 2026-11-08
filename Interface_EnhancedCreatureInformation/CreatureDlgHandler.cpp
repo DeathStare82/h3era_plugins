@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <string>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <map>
@@ -434,11 +436,233 @@ BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
     return TRUE;
 }
 
+// =====================================================================
+// [Multiverse] 비전투 유닛 정보창 도우미 (영웅·마을 부대 / 고용창)
+// =====================================================================
+namespace
+{
+    // C++ → ERM 으로 부르는 함수 이름. ERM 에서는 !?FU(Mv_CreatureInfo_NonBattle); 로 받는다.
+    //   주고받는 값은 그 함수의 x 변수(x1~x5)만 쓰므로 v/z 변수를 차지하지 않는다.
+    constexpr const char* MV_ERM_NONBATTLE_FUNC = "Mv_CreatureInfo_NonBattle";
+
+    // 새 ERT 번호 4개 (ERT에 없으면 아래 코드의 기본 문구 사용. 이미 쓰는 번호라면 여기만 바꾸면 됨)
+    constexpr int MV_ERT_NB_MORALE      = 202778;  // "사기: %s"   (%s 자리에 +7 같은 값)
+    constexpr int MV_ERT_NB_LUCK        = 202779;  // "행운: %s"
+    constexpr int MV_ERT_NB_MORALE_HINT = 202780;  // 사기 줄 마우스오버 힌트
+    constexpr int MV_ERT_NB_LUCK_HINT   = 202781;  // 행운 줄 마우스오버 힌트
+
+    struct MvNonBattleErmResult
+    {
+        int extraShots = -1;     // ERM x4 (-1 = 표시 안 함)
+        int retaliations = -1;   // ERM x5 (-1 = C++ 기본값)
+    };
+
+    // ERM 함수 FU(Mv_CreatureInfo_NonBattle) 실행
+    //   보내는 값: x1 = 유닛 번호, x2 = 부대 수량(모르면 0), x3 = 영웅 번호(없으면 -1)
+    //   받는 값:   x4 = 여분발사횟수, x5 = 반격횟수
+    //   ERM 쪽에 함수가 없으면 아무 일도 일어나지 않고 기본값(-1)이 그대로 남는다.
+    MvNonBattleErmResult MvCallNonBattleErm(int creatureId, int count, int heroId)
+    {
+        MvNonBattleErmResult result;
+
+        int funcId = 0;
+        Era::AllocErmFunc(MV_ERM_NONBATTLE_FUNC, funcId);
+        Era::TXVars* args = Era::GetArgXVars();
+        if (funcId == 0 || !args)
+            return result;
+
+        for (int i = 0; i < 16; ++i)
+            (*args)[i] = 0;
+        (*args)[0] = creatureId;   // x1
+        (*args)[1] = count;        // x2
+        (*args)[2] = heroId;       // x3
+        (*args)[3] = -1;           // x4
+        (*args)[4] = -1;           // x5
+
+        Era::FireErmEvent(funcId);
+
+        // x1이 보낸 값 그대로면 이번 호출의 결과로 보고 x4, x5를 읽는다
+        Era::TXVars* ret = Era::GetRetXVars();
+        if (ret && (*ret)[0] == creatureId)
+        {
+            result.extraShots = (*ret)[3];
+            result.retaliations = (*ret)[4];
+        }
+        return result;
+    }
+
+    // ERM이 반격횟수를 정해 주지 않았을 때의 기본값 (원래 게임 규칙)
+    int MvDefaultRetaliations(int creatureId)
+    {
+        if (creatureId == 4) return 2;     // 그리핀: 반격 2회
+        if (creatureId == 5) return 999;   // 로열 그리핀: 무제한 (∞ 로 표시)
+        return 1;
+    }
+
+    // 원래 창 아래쪽의 사기/행운 숫자 글자("+7", "0", "-2")를 읽는다. 글자가 없으면 false
+    bool MvReadNativeNumber(H3CreatureInfoDlg* dlg, int textId, int& value)
+    {
+        H3DlgText* text = dlg ? dlg->GetText(textId) : nullptr;
+        if (!text)
+            return false;
+        const char* s = text->GetH3String().String();
+        if (MvIsEmpty(s))
+            return false;
+
+        // 숫자가 시작되는 곳까지 건너뛰기 (색상 태그 등이 앞에 붙어 있어도 읽을 수 있게)
+        while (*s && !(*s >= '0' && *s <= '9') &&
+               !((*s == '+' || *s == '-') && s[1] >= '0' && s[1] <= '9'))
+            ++s;
+        if (!*s)
+            return false;
+
+        value = std::atoi(s);
+        return true;
+    }
+
+    // 전투 때와 같은 모양: 양수 "+7", 0은 "  0"(자리 맞춤), 음수 "-2"
+    std::string MvSignedValue(int value)
+    {
+        char buf[16];
+        if (value > 0)
+            std::snprintf(buf, sizeof(buf), "+%d", value);
+        else if (value == 0)
+            std::snprintf(buf, sizeof(buf), "  0");
+        else
+            std::snprintf(buf, sizeof(buf), "%d", value);
+        return buf;
+    }
+
+    // "%s" 자리에 글자 끼워넣기 (ERT 문구용)
+    std::string MvReplaceText(std::string fmt, const std::string& value)
+    {
+        const auto pos = fmt.find("%s");
+        if (pos != std::string::npos) fmt.replace(pos, 2, value);
+        else fmt += value;
+        return fmt;
+    }
+
+    // "{~White}10{~}" (전투 때 ERM이 만드는 값과 같은 모양)
+    std::string MvWhiteNumber(int value)
+    {
+        char buf[48];
+        std::snprintf(buf, sizeof(buf), "{~White}%d{~}", value);
+        return buf;
+    }
+}
+
+// 비전투 창 (영웅·마을 부대 / 고용창)
+//   전투 때와 같은 자리, 같은 템플릿 번호를 쓰므로
+//   마우스오버 힌트(아래 상태바)와 우클릭 안내창(HandleMsg)이 전투 때와 똑같이 동작한다.
+void CreatureDlgHandler::AddNonBattleStats()
+{
+    const int creatureId = dlg->creatureId;
+    if (creatureId < 0)
+        return;
+
+    // ---------- 0. 필요한 값 모으기 ----------
+    int count = 0;                                    // 부대 수량 (고용창처럼 알 수 없으면 0)
+    if (army && armySlotIndex >= 0 && armySlotIndex < 7)
+        count = army->count[armySlotIndex];
+    const int heroId = hero ? hero->id : -1;          // 영웅 번호 (없으면 -1)
+
+    int morale = 0;
+    int luck = 0;
+    const bool hasMorale = MvReadNativeNumber(dlg, DLG_MORALE_TEXT_ID, morale);
+    const bool hasLuck = MvReadNativeNumber(dlg, DLG_LUCK_TEXT_ID, luck);
+
+    // ERM 함수 실행 → 여분발사횟수(x4), 반격횟수(x5)
+    const MvNonBattleErmResult erm = MvCallNonBattleErm(creatureId, count, heroId);
+
+    // ---------- 1. 마법횟수 (유닛 기본값, MA:B로 바꾼 값도 그대로 반영됨) ----------
+    const int charges = H3CreatureInformation::Get()[creatureId].spellCharges;
+    if (charges > 0)
+    {
+        const std::string spellLabel = GetErtText(202756, "{~White}마법횟수{~}");
+        const std::string spellHint  = GetErtText(202763, "남은 주문 시전 횟수 / 최대 시전 횟수입니다.");
+        MvAddText(dlg, 110, 311, 67, 110, 17, spellLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT, spellHint.c_str());
+
+        char spellBuf[16];
+        std::snprintf(spellBuf, sizeof(spellBuf), "%d", charges);
+        MvAddText(dlg, 210, 311, 67, 118, 17, spellBuf, NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, spellHint.c_str());
+    }
+
+    // ---------- 2. 여분발사횟수 (ERM이 x4로 돌려준 값) ----------
+    if (erm.extraShots >= 0)
+    {
+        const std::string shotLabel = GetErtText(202757, "{~White}여분발사횟수{~}");
+        const std::string shotHint  = GetErtText(202764, "이번 전투에서 사용할 수 있는 추가 사격 횟수입니다.");
+        const std::string shotValue = MvWhiteNumber(erm.extraShots);
+        MvAddText(dlg, 104, 311, 86, 110, 17, shotLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT, shotHint.c_str());
+        MvAddText(dlg, 204, 311, 86, 118, 17, shotValue.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, shotHint.c_str());
+    }
+
+    // ---------- 3. 원래 수량 (전투 밖에서는 지금 수량) ----------
+    if (count > 0)
+    {
+        const std::string origLabel = GetErtText(202760, "{~White}원래 수량:{~}");
+        const std::string origHint  = GetErtText(202765, "부대의 원래 개체 수입니다.");
+        const std::string origValue = MvWhiteNumber(count);
+        MvAddText(dlg, 30, 48, 185, 113, 17, origLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT, origHint.c_str());
+        MvAddText(dlg, 40, 48, 185, 113, 17, origValue.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, origHint.c_str());
+    }
+
+    // ---------- 4. 반격횟수 (ERM x5, 없으면 기본값 / 100 이상은 ∞) ----------
+    {
+        const int retaliations = erm.retaliations >= 0 ? erm.retaliations : MvDefaultRetaliations(creatureId);
+        const std::string retValue = retaliations > 99 ? "{~White}" + GetErtText(202712, "∞") + "{~}"
+                                                       : MvWhiteNumber(retaliations);
+        const std::string retLabel = GetErtText(202761, "{~White}반격횟수{~}");
+        const std::string retHint  = GetErtText(202766, "한 라운드에 적의 공격에 대응해 반격할 수 있는 횟수입니다.");
+        MvAddText(dlg, 109, 194, 185, 80, 17, retLabel.c_str(), NH3Dlg::Text::MEDIUM, eTextAlignment::TOP_LEFT, retHint.c_str());
+        MvAddText(dlg, 209, 194, 185, 80, 17, retValue.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_RIGHT, retHint.c_str());
+    }
+
+    // ---------- 5. 사기 / 행운 (아래쪽 원래 아이콘을 숨기고 글자로 표시) ----------
+    if (hasMorale)
+    {
+        MvHide(dlg, DLG_MORALE_ID);
+        MvHide(dlg, DLG_MORALE_TEXT_ID);
+        const std::string moraleText = MvReplaceText(GetErtText(MV_ERT_NB_MORALE, "사기: %s"), MvSignedValue(morale));
+        const std::string moraleHint = GetErtText(MV_ERT_NB_MORALE_HINT, "부대의 사기 수치");
+        MvAddText(dlg, 212, 48, 204, 227, 17, moraleText.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, moraleHint.c_str());
+    }
+    if (hasLuck)
+    {
+        MvHide(dlg, DLG_LUCK_ID);
+        MvHide(dlg, DLG_LUCK_TEXT_ID);
+        const std::string luckText = MvReplaceText(GetErtText(MV_ERT_NB_LUCK, "행운: %s"), MvSignedValue(luck));
+        const std::string luckHint = GetErtText(MV_ERT_NB_LUCK_HINT, "부대의 행운 수치");
+        MvAddText(dlg, 213, 48, 223, 227, 17, luckText.c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, luckHint.c_str());
+    }
+
+    // ---------- 6. 특수능력 (원래 게임의 특수능력 설명) ----------
+    //   전투력 줄(244)이 없으므로 한 줄 위로 올리고, 아래 버튼 줄 바로 위까지 쓴다.
+    const std::string specLabel = GetErtText(202758, "{~White}특수능력:{~}");
+    const std::string specHint  = GetErtText(202767, "현재 부대가 보유한 고유 특수 능력 정보입니다.");
+    const std::string specText  = GetDescriptionText(FindOriginalDescription());
+
+    const int specTop = 259;
+    int specBottom = BUTTON_Y - BUTTON_FRAME_BORDER - 2;
+    if (specBottom < specTop + 30)
+        specBottom = specTop + 30;
+
+    MvAddText(dlg, 37, 20, 244, 257, 17, specLabel.c_str(), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, specHint.c_str());
+    MvAddText(dlg, 38, 20, specTop, 257, specBottom - specTop, specText.c_str(), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, specHint.c_str());
+}
+
 // 커스텀 유닛 정보창 전체 배치 (z11~z23 + C++ 계산값)
 void CreatureDlgHandler::AddCustomStats()
 {
-    if (!dlg || !stack)
+    if (!dlg)
         return;
+
+    // [Multiverse] 비전투 창 (영웅·마을 부대, 고용창) → 별도 처리
+    if (!stack)
+    {
+        AddNonBattleStats();
+        return;
+    }
 
     // ---------- 0. 원본 항목 숨기기 ----------
     MvHide(dlg, DLG_NAME_ID);
@@ -694,7 +918,12 @@ BOOL CreatureDlgHandler::AlignItems()
     {
         int x = 0;
         if (GetDialogButtonX(id, x))
+        {
+            // [Multiverse] 비전투 창: 해고 버튼을 왼쪽 칸 오른쪽 끝으로 (테두리는 CreatureDlgHooks.cpp에서 같이 이동)
+            if (id == DLG_DISMISS_ID && !stack)
+                x += NONBATTLE_DISMISS_SHIFT_X;
             SetDialogButtonBounds(dlg->GetH3DlgItem(id), x);
+        }
     }
     return BuildDescriptionArea();
 }

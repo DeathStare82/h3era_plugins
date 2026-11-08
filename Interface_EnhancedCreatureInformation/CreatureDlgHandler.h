@@ -68,6 +68,9 @@ class CreatureDlgHandler
     void BuildAppliedSpellList(int x, int y, int width, int height, const std::string &fallbackHint);
     BOOL ShowAppliedSpellPopup(int row);
 
+    // [Multiverse] 비전투 창(영웅·마을 부대, 고용창)에 정보를 채운다. AddCustomStats()가 부른다.
+    void AddNonBattleStats();
+
     void ApplyDialogAppearance();
     void HideDefaultBattleSpellItems();
     H3DlgText *FindOriginalDescription() const;
@@ -78,6 +81,10 @@ class CreatureDlgHandler
     void ResetExperienceSkillsPanel();
 
   public:
+    // [Multiverse] 비전투 창에서 해고 버튼(과 그 테두리)을 오른쪽으로 옮기는 거리(픽셀).
+    //   버튼 위치를 바꾸고 싶으면 이 숫자만 바꾸면 된다. (크게 = 오른쪽, 작게 = 왼쪽, 0 = 원래 자리)
+    static constexpr int NONBATTLE_DISMISS_SHIFT_X = 104;
+
     CreatureDlgHandler(H3CreatureInfoDlg *dlg, H3CombatCreature *stack = nullptr, H3Army *army = nullptr,
                        int armySlotIndex = -1, const H3Hero *hero = nullptr, int playerColor = -1);
     ~CreatureDlgHandler();
