@@ -198,10 +198,61 @@ namespace
             -1, 0, -1, 0, -1, 0);
     }
 
-    // ERM(CM4)이 줄마다 "걸린 수준" 기준으로 미리 만들어 두는 안내문: z901 + 줄번호 (최대 20줄)
-    // z 번호가 이미 쓰이는 중이면 여기와 ERM 양쪽을 같이 바꿀 것.
-    constexpr int MV_Z_SPELL_POPUP_FIRST = 901;
-    constexpr int MV_Z_SPELL_POPUP_MAX   = 20;
+    // ---------------------------------------------------------------
+    // ERM SN:W 변수 읽기 (z변수와 달리 글자 수 제한 없음)
+    //   ERM(CM4)이 줄마다 남겨 두는 값 (n = 1부터):
+    //     SN:W^Mv_AppSp_Count^              줄 수
+    //     SN:W^Mv_AppSp_<n>_Text^           목록 한 줄
+    //     SN:W^Mv_AppSp_<n>_Slot/Code/Lev^  효과 칸(r) / 마법 번호(s) / 걸린 수준(l)
+    //     SN:W^Mv_AppSp_<n>_Popup^          우클릭 안내문
+    // ---------------------------------------------------------------
+    int MvSnInt(const char* name)
+    {
+        return Era::GetAssocVarIntValue(name);
+    }
+
+    std::string MvSnStr(const char* name)
+    {
+        const char* s = Era::GetAssocVarStrValue(name);   // Era가 새로 할당해서 돌려줌 → 반드시 MemFree
+        std::string out = s ? s : "";
+        if (s)
+            Era::MemFree((void*)s);
+        return out;
+    }
+
+    // 스크롤바 (마법이 목록 칸을 넘칠 때만 생김)
+    constexpr int MV_SCROLLBAR_TEMPLATE_ID = 599;   // 아이템 ID 30599
+    constexpr int MV_SCROLLBAR_WIDTH       = 16;
+    constexpr int MV_SCROLLBAR_GAP         = 2;     // 글자와 스크롤바 사이
+
+    // 적용된 마법 목록 칸 (Stackinfo_0.txt 템플릿 36번 자리)
+    constexpr int MV_APPLIED_LIST_X      = 286;
+    constexpr int MV_APPLIED_LIST_Y      = 137;
+    constexpr int MV_APPLIED_LIST_WIDTH  = 145;
+    constexpr int MV_APPLIED_LIST_HEIGHT = 188;
+
+    // 스크롤바 콜백이 어느 창의 목록을 움직일지 (정보창은 한 번에 하나만 열림)
+    CreatureDlgHandler* g_mvAppliedSpellsHandler = nullptr;
+
+    // 마우스 휠 메시지 (H3API eMsgCommand::WHEEL_BUTTON 과 같은 값)
+    //   subtype > 0 : 휠을 위로(앞으로) = 목록 위로 / subtype < 0 : 아래로
+    constexpr int MV_MSG_MOUSE_WHEEL = 0x309;
+
+    // 휠이 안 먹을 때 원인 확인용: true로 바꿔 빌드하면, 창에 들어오는 메시지 번호가 아래 상태바에 보인다.
+    //   휠을 굴렸을 때 나오는 "cmd=..., sub=..." 값을 알려주면 위 숫자를 맞출 수 있다. 확인 후 다시 false로.
+    constexpr bool MV_WHEEL_DEBUG = false;
+
+    // 휠로 움직였을 때 스크롤바 손잡이 위치도 맞춘다
+    // ※ SetTick / SetButtonPosition 에서 컴파일 오류가 나면 그 줄만 지워도 된다 (목록은 움직이고 손잡이만 그대로)
+    void MvSyncScrollbar(H3DlgScrollbar* bar, int tick)
+    {
+        if (!bar)
+            return;
+        bar->SetTick(tick);
+        bar->SetButtonPosition();
+        bar->Draw();
+        bar->Refresh();
+    }
 
     // 안내창 대신 단순 메시지를 띄우는 효과 칸 (r) 과 그 ERT
     constexpr int MV_SLOT_OGRE_ROAR = 39;   // 오우거의 함성
@@ -214,13 +265,6 @@ namespace
     constexpr int MV_SCROLL_SPELL_FIRST   = 81;
     constexpr int MV_SCROLL_SPELL_LAST    = 200;
     constexpr int MV_SCROLL_PICTURE_SLOT  = 80;
-
-    struct MvSpellRef
-    {
-        int spellId;     // r
-        int spellCode;   // s (없으면 r)
-        int level;
-    };
 
     // "{~LightGreen}...{~}" 같은 색상 태그 제거
     std::string MvStripColorTags(const std::string& s)
@@ -254,42 +298,6 @@ namespace
         return first == std::string::npos ? std::string() : name.substr(first, last - first + 1);
     }
 
-    // z21 → 줄 단위로 분리 (MvCountLines와 같은 기준)
-    std::vector<std::string> MvSplitLines(const char* s)
-    {
-        std::vector<std::string> out;
-        if (MvIsEmpty(s)) return out;
-        std::string cur;
-        for (; *s; ++s)
-        {
-            if (*s == '\r') continue;
-            if (*s == '\n') { out.push_back(cur); cur.clear(); }
-            else cur += *s;
-        }
-        out.push_back(cur);
-        return out;
-    }
-
-    // z23 = "0:82:2 46:46:0 " (효과칸:마법번호:레벨) 형식 → 목록
-    //       예전 형식 "46:0 " (효과칸:레벨)도 읽는다 (그때는 마법번호 = 효과칸)
-    std::vector<MvSpellRef> MvParseSpellRefs(const char* s)
-    {
-        std::vector<MvSpellRef> out;
-        if (MvIsEmpty(s)) return out;
-        std::istringstream in(s);
-        std::string token;
-        while (in >> token)
-        {
-            int a = -1, b = 0, c = 0;
-            const int n = std::sscanf(token.c_str(), "%d:%d:%d", &a, &b, &c);
-            if (n >= 3)
-                out.push_back({a, b, c});
-            else if (n >= 1)
-                out.push_back({a, a, n >= 2 ? b : 0});
-        }
-        return out;
-    }
-
     // 폰트 기준 줄 높이 / 줄 수 (긴 마법 이름이 두 줄로 넘어가도 잘리지 않게)
     // ※ H3FontLoader / height / GetLinesCountInText 에서 컴파일 오류가 나면
     //    이 함수 본문을 "return {fallbackLineHeight, 1};" 로 바꿔도 동작합니다.
@@ -317,53 +325,199 @@ namespace
     }
 }
 
-// 적용된 마법 목록을 "한 줄 = 한 아이템"으로 만든다.
-// z21(표시 문자열)과 z23(번호:레벨)은 ERM의 같은 루프에서 같은 순서로 쌓이므로 n번째끼리 짝이 맞는다.
-void CreatureDlgHandler::BuildAppliedSpellList(int x, int y, int width, int height, const std::string &fallbackHint)
+// ERM(CM4)이 SN:W로 줄마다 남겨 둔 적용된 마법을 읽는다. 하나라도 있으면 true
+bool CreatureDlgHandler::CollectAppliedSpellRows()
 {
     appliedSpellRows.clear();
 
-    const char* applied = MvZ(21);
-    if (MvIsEmpty(applied))
-        return;
-
-    const std::vector<std::string> lines = MvSplitLines(applied);
-    const std::vector<MvSpellRef> refs = MvParseSpellRefs(MvZ(23));
-
-    // ERM이 z23을 아직 안 채웠거나 줄 수가 어긋나면 → 예전처럼 통짜 텍스트(우클릭 시 202768 공통 안내)
-    if (refs.size() != lines.size())
+    const int count = MvSnInt("Mv_AppSp_Count");
+    for (int n = 1; n <= count && n <= MV_SPELL_ROW_MAX; ++n)
     {
-        MvAddText(dlg, 36, x, y, width, height, applied, NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, fallbackHint.c_str());
-        return;
-    }
-
-    const std::string rowHint = GetErtText(MV_ERT_SPELL_ROW_HINT, "{~y}우클릭{~}: 이 마법의 상세 정보 보기");
-    const int bottom = y + height;
-    int rowY = y;
-
-    for (size_t i = 0; i < lines.size() && i < static_cast<size_t>(MV_SPELL_ROW_MAX); ++i)
-    {
-        const MvTextMetrics m = MvMeasure(NH3Dlg::Text::SMALL, lines[i].c_str(), width, 16);
-        const int rowHeight = m.lineHeight * m.lines;
-        if (rowY + rowHeight > bottom)
-            break; // 영역(286,137 ~ 145x188)을 넘으면 더 그리지 않음
-
+        char name[64];
         AppliedSpellRow row;
-        row.spellId = refs[i].spellId;
-        row.spellCode = refs[i].spellCode;
-        row.level = refs[i].level;
-        row.text = lines[i];
-        appliedSpellRows.push_back(row);   // 인덱스 i == 템플릿 ID (500 + i)
 
-        MvAddText(dlg, MV_SPELL_ROW_FIRST + static_cast<int>(i), x, rowY, width, rowHeight,
-                  lines[i].c_str(), NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, rowHint.c_str());
-        rowY += rowHeight;
+        std::snprintf(name, sizeof(name), "Mv_AppSp_%d_Text", n);
+        row.text = MvSnStr(name);
+        if (MvIsEmpty(row.text.c_str()))
+            continue;
+
+        std::snprintf(name, sizeof(name), "Mv_AppSp_%d_Slot", n);
+        row.spellId = MvSnInt(name);
+        std::snprintf(name, sizeof(name), "Mv_AppSp_%d_Code", n);
+        row.spellCode = MvSnInt(name);
+        std::snprintf(name, sizeof(name), "Mv_AppSp_%d_Lev", n);
+        row.level = MvSnInt(name);
+        std::snprintf(name, sizeof(name), "Mv_AppSp_%d_Popup", n);
+        row.popup = MvSnStr(name);
+
+        appliedSpellRows.push_back(row);
     }
+    return !appliedSpellRows.empty();
+}
+
+// 적용된 마법 목록을 "한 줄 = 한 아이템"으로 만든다. 칸을 넘치면 오른쪽에 스크롤바를 붙인다.
+void CreatureDlgHandler::BuildAppliedSpellList(int x, int y, int width, int height)
+{
+    appliedSpellItems.clear();
+    appliedRowTop.clear();
+    appliedRowHeight.clear();
+    appliedScrollbar = nullptr;
+    appliedScrollTick = 0;
+    appliedMaxTick = 0;
+    appliedListX = x;
+    appliedListY = y;
+    appliedListHeight = height;
+
+    if (!dlg || appliedSpellRows.empty())
+        return;
+
+    // 1) 줄 높이 재기 (긴 이름은 두 줄이 될 수 있음). 넘치면 스크롤바 자리를 빼고 다시 잰다.
+    auto measure = [this](int textWidth) {
+        appliedRowTop.clear();
+        appliedRowHeight.clear();
+        int top = 0;
+        for (const auto &row : appliedSpellRows)
+        {
+            const MvTextMetrics m = MvMeasure(NH3Dlg::Text::SMALL, row.text.c_str(), textWidth, 16);
+            const int rowHeight = m.lineHeight * m.lines;
+            appliedRowTop.push_back(top);
+            appliedRowHeight.push_back(rowHeight);
+            top += rowHeight;
+        }
+        return top;
+    };
+
+    int textWidth = width;
+    int totalHeight = measure(textWidth);
+    const bool needScroll = totalHeight > height;
+    if (needScroll)
+    {
+        textWidth = width - MV_SCROLLBAR_WIDTH - MV_SCROLLBAR_GAP;
+        totalHeight = measure(textWidth);
+    }
+    appliedListWidth = textWidth;
+
+    // 2) 최대 스크롤 위치 = 마지막 줄까지 칸 안에 들어오게 되는 첫 줄 번호
+    if (needScroll)
+    {
+        appliedMaxTick = static_cast<int>(appliedSpellRows.size()) - 1;
+        for (int t = 0; t < static_cast<int>(appliedRowTop.size()); ++t)
+            if (totalHeight - appliedRowTop[t] <= height)
+            {
+                appliedMaxTick = t;
+                break;
+            }
+    }
+
+    // 3) 줄마다 아이템 (위치와 보이기/숨기기는 LayoutAppliedSpellRows가 정함)
+    const std::string rowHint = GetErtText(MV_ERT_SPELL_ROW_HINT, "{~y}우클릭{~}: 이 마법의 상세 정보 보기");
+    for (size_t i = 0; i < appliedSpellRows.size(); ++i)
+    {
+        appliedSpellItems.push_back(MvAddText(dlg, MV_SPELL_ROW_FIRST + static_cast<int>(i), x, y + appliedRowTop[i],
+                                              textWidth, appliedRowHeight[i], appliedSpellRows[i].text.c_str(),
+                                              NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, rowHint.c_str()));
+    }
+
+    // 4) 스크롤바 (칸을 넘칠 때만)
+    if (needScroll && appliedMaxTick > 0)
+    {
+        g_mvAppliedSpellsHandler = this;
+        appliedScrollbar = H3DlgScrollbar::Create(x + width - MV_SCROLLBAR_WIDTH, y, MV_SCROLLBAR_WIDTH, height,
+                                                  MV_ID_BASE + MV_SCROLLBAR_TEMPLATE_ID, appliedMaxTick + 1,
+                                                  AppliedSpellsScrollbarProc, FALSE, 1, TRUE);
+        if (appliedScrollbar)
+            dlg->AddItem(appliedScrollbar);
+    }
+
+    LayoutAppliedSpellRows(false);
+}
+
+// 현재 스크롤 위치에 맞게 줄을 올리고, 칸 밖으로 나간 줄은 숨긴다 (숨긴 줄은 마우스에도 반응하지 않음)
+void CreatureDlgHandler::LayoutAppliedSpellRows(bool redraw)
+{
+    if (!dlg)
+        return;
+
+    const int offset = (appliedScrollTick >= 0 && appliedScrollTick < static_cast<int>(appliedRowTop.size()))
+                           ? appliedRowTop[appliedScrollTick]
+                           : 0;
+    const int bottom = appliedListY + appliedListHeight;
+
+    for (size_t i = 0; i < appliedSpellItems.size(); ++i)
+    {
+        H3DlgText *item = appliedSpellItems[i];
+        if (!item)
+            continue;
+
+        const int rowY = appliedListY + appliedRowTop[i] - offset;
+        item->SetY(rowY);
+        if (rowY >= appliedListY && rowY + appliedRowHeight[i] <= bottom)
+            item->ShowActivate();
+        else
+            item->HideDeactivate();
+    }
+
+    if (redraw)
+        dlg->Redraw(appliedListX, appliedListY, appliedListWidth, appliedListHeight);
+}
+
+void CreatureDlgHandler::ScrollAppliedSpells(int tick)
+{
+    appliedScrollTick = Clamp(0, tick, appliedMaxTick);
+    ++appliedScrollSerial;
+    LayoutAppliedSpellRows(true);
+}
+
+// 정보창 안 어디서든 휠을 굴리면 적용된 마법 목록을 한 줄씩 움직인다 (스크롤바가 있을 때만)
+//   HD 모드도 "모든 스크롤바를 휠로 조작"하므로, 이번 메시지를 처리하는 동안 이미 목록이 움직였으면
+//   (= HD 모드가 스크롤바를 움직였으면) 여기서는 건너뛴다 → 한 번에 두 줄씩 넘어가지 않음
+void CreatureDlgHandler::HandleMouseWheel(H3Msg *msg)
+{
+    if (!dlg || !msg)
+        return;
+
+    const int command = static_cast<int>(msg->command);
+    const int subtype = static_cast<int>(msg->subtype);
+
+    if (MV_WHEEL_DEBUG && command != static_cast<int>(eMsgCommand::MOUSE_OVER))
+    {
+        if (auto *hintBar = dlg->GetTextPcx(DLG_HINT_ID))
+        {
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "cmd=%d, sub=%d", command, subtype);
+            hintBar->SetText(buf);
+            hintBar->Draw();
+            hintBar->Refresh();
+        }
+    }
+
+    const bool alreadyScrolled = appliedScrollSerial != appliedScrollSerialSeen;
+    appliedScrollSerialSeen = appliedScrollSerial;
+
+    if (command != MV_MSG_MOUSE_WHEEL || subtype == 0 || alreadyScrolled)
+        return;
+    if (!appliedScrollbar || appliedMaxTick <= 0)
+        return;
+
+    const int target = Clamp(0, appliedScrollTick + (subtype > 0 ? -1 : 1), appliedMaxTick);
+    if (target == appliedScrollTick)
+        return;
+
+    ScrollAppliedSpells(target);
+    MvSyncScrollbar(appliedScrollbar, target);
+    appliedScrollSerialSeen = appliedScrollSerial;
+}
+
+void __fastcall CreatureDlgHandler::AppliedSpellsScrollbarProc(INT32 tick, H3BaseDlg *baseDlg)
+{
+    CreatureDlgHandler *handler = g_mvAppliedSpellsHandler;
+    if (handler && reinterpret_cast<H3BaseDlg *>(handler->dlg) == baseDlg)
+        handler->ScrollAppliedSpells(tick);
 }
 
 // 적용된 마법 한 줄을 우클릭했을 때 (마법책 우클릭과 같은 게임 내부 안내창)
-//   본문: ERM(CM4)이 "걸린 수준" 기준으로 미리 만들어 둔 z901+줄번호
-//         비어 있으면(ERM 쪽 미적용) 게임에 저장된 현재 설명 / 스크롤 마법은 z(400+번호)
+//   본문: ERM(CM4)이 "걸린 수준" 기준으로 미리 만들어 둔 SN:W^Mv_AppSp_<n>_Popup^
+//         비어 있으면 게임에 저장된 현재 설명 / 스크롤 마법은 z(400+번호)
 //   그림: 효과 칸 39(오우거의 함성)·60(최면) → 그림 없이 단순 메시지
 //         0~80번 → SPELLSCR 해당 그림 / 81번~(스크롤 마법) → 80번 그림을 바꿔서 표시
 BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
@@ -380,9 +534,7 @@ BOOL CreatureDlgHandler::ShowAppliedSpellPopup(int row)
     const bool scrollSpell = code >= MV_SCROLL_SPELL_FIRST && code <= MV_SCROLL_SPELL_LAST;
 
     // ---------- 본문 ----------
-    std::string body;
-    if (row < MV_Z_SPELL_POPUP_MAX)
-        body = MvZ(MV_Z_SPELL_POPUP_FIRST + row);
+    std::string body = entry.popup;
 
     if (MvIsEmpty(body.c_str()))
     {
@@ -673,7 +825,7 @@ void CreatureDlgHandler::AddNonBattleStats()
     MvAddText(dlg, 38, 20, specTop, 257, specBottom - specTop, specText.c_str(), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, specHint.c_str());
 }
 
-// 커스텀 유닛 정보창 전체 배치 (z11~z23 + C++ 계산값)
+// 커스텀 유닛 정보창 전체 배치 (z11~z22, SN:W^Mv_AppSp_..^ + C++ 계산값)
 void CreatureDlgHandler::AddCustomStats()
 {
     if (!dlg)
@@ -778,15 +930,26 @@ void CreatureDlgHandler::AddCustomStats()
     // ---------- 11. 추가 설명: 방해광선/복제 등 (z20) ----------
     MvAddText(dlg, 41, 20, 345, 257, 30, MvZ(20), NH3Dlg::Text::TINY, eTextAlignment::TOP_LEFT, MvZ(20));
 
-    // ---------- 12. 적용된 마법 (z21 표시 + z23 번호:레벨) (ERT 202768번 힌트 연동) ----------
-    const char* applied = MvZ(21);
-    const int appliedCount = MvCountLines(applied);
+    // ---------- 12. 적용된 마법 (SN:W^Mv_AppSp_..^ 줄 단위) (ERT 202768번 힌트 연동) ----------
+    const bool perRow = CollectAppliedSpellRows();
+    const char* applied = MvZ(21);   // ERM을 아직 안 바꿨을 때만 쓰는 예전 통짜 목록
+    const int appliedCount = perRow ? static_cast<int>(appliedSpellRows.size()) : MvCountLines(applied);
     std::string appliedLabel = MvFormatCount(GetErtText(202759, "{~LightBlue}적용된 마법 (%d){~}"), appliedCount);
     std::string appliedHint  = GetErtText(202768, "현재 부대에 영향을 주고 있는 마법 및 지속시간 목록입니다.");
 
     MvAddText(dlg, 35, 287, 108, 141, 17, appliedLabel.c_str(), NH3Dlg::Text::MEDIUM, MV_TOP_CENTER, appliedHint.c_str());
-    // 기존: 통짜 텍스트 1개(템플릿 36) → 변경: 마법 한 줄마다 개별 아이템(템플릿 500+n)
-    BuildAppliedSpellList(286, 137, 145, 188, appliedHint);
+
+    // 목록 칸 아래 끝이 아래쪽 버튼 줄(OK·마법 등)의 테두리에 닿지 않게 한다 (버튼 위치가 바뀌어도 자동으로 맞춰짐)
+    int listHeight = MV_APPLIED_LIST_HEIGHT;
+    const int buttonTop = BUTTON_Y - BUTTON_FRAME_BORDER - 2;
+    if (MV_APPLIED_LIST_Y + listHeight > buttonTop)
+        listHeight = std::max(16, buttonTop - MV_APPLIED_LIST_Y);
+
+    if (perRow)   // 한 줄 = 한 아이템(템플릿 500+n), 넘치면 스크롤바
+        BuildAppliedSpellList(MV_APPLIED_LIST_X, MV_APPLIED_LIST_Y, MV_APPLIED_LIST_WIDTH, listHeight);
+    else
+        MvAddText(dlg, 36, MV_APPLIED_LIST_X, MV_APPLIED_LIST_Y, MV_APPLIED_LIST_WIDTH, listHeight, applied,
+                  NH3Dlg::Text::SMALL, eTextAlignment::TOP_LEFT, appliedHint.c_str());
 }
 
 CreatureDlgHandler::CreatureDlgHandler(H3CreatureInfoDlg *dlg, H3CombatCreature *stack, H3Army *army, int armySlotIndex,
@@ -816,6 +979,8 @@ CreatureDlgHandler::CreatureDlgHandler(H3CreatureInfoDlg *dlg, H3CombatCreature 
 
 CreatureDlgHandler::~CreatureDlgHandler()
 {
+    if (g_mvAppliedSpellsHandler == this)
+        g_mvAppliedSpellsHandler = nullptr;
     ReleaseUnownedSkillImages();
 }
 

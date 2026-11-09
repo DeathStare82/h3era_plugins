@@ -546,6 +546,10 @@ _LHF_(Dlg_CreatureInfo_RmcProc)
 int __stdcall H3CreatureInfoDlg_Proc(HiHook *hook, H3CreatureInfoDlg *dlg, H3Msg *msg)
 {
     const int result = THISCALL_2(int, hook->GetDefaultFunc(), dlg, msg);
+    // [Multiverse] 적용된 마법 목록 마우스 휠 스크롤              
+    if (auto *wheelHandler = GetDialogHandler(dlg))                  
+        wheelHandler->HandleMouseWheel(msg);  
+
     switch (msg->command)
     {
     case eMsgCommand::MOUSE_OVER:

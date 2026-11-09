@@ -22,13 +22,14 @@ class CreatureDlgHandler
         int baseY = 0;
     };
 
-    // [Multiverse] 적용된 마법 목록의 한 줄 (z21의 n번째 줄 ↔ z23의 n번째 "효과칸:마법번호:레벨")
+    // [Multiverse] 적용된 마법 목록의 한 줄 (ERM이 SN:W^Mv_AppSp_<n>_...^ 로 줄마다 남겨 둔 값)
     struct AppliedSpellRow
     {
-        int spellId = -1;     // ERM 루프의 r (BM:G 효과 칸 번호)
-        int spellCode = -1;   // Fix_Code_for_AppliedSpell 결과 s (목록 이름·설명·그림 기준, 81 이상은 스크롤 마법)
-        int level = 0;        // 0=기본, 1=초급, 2=중급, 3=고급
-        std::string text;     // z21의 해당 줄 그대로 (색상 태그 포함)
+        int spellId = -1;     // _Slot : ERM 루프의 r (BM:G 효과 칸 번호)
+        int spellCode = -1;   // _Code : Fix_Code_for_AppliedSpell 결과 s (81 이상은 스크롤 마법)
+        int level = 0;        // _Lev  : 0=기본, 1=초급, 2=중급, 3=고급
+        std::string text;     // _Text : 목록에 보이는 한 줄 (색상 태그 포함)
+        std::string popup;    // _Popup: 우클릭 안내문 ("걸린 수준" 기준)
     };
 
     H3CreatureInfoDlg *dlg = nullptr;
@@ -62,10 +63,26 @@ class CreatureDlgHandler
     H3DlgScrollbar *skillsScrollbar = nullptr;
     std::vector<char> skillPopupBuffer;
 
-    // [Multiverse] 행 번호 = (아이템 ID - 30000) - 500
+    // [Multiverse] 적용된 마법 목록. 행 번호 = (아이템 ID - 30000) - 500
     std::vector<AppliedSpellRow> appliedSpellRows;
+    std::vector<H3DlgText *> appliedSpellItems;   // 행 번호와 같은 순서
+    std::vector<int> appliedRowTop;               // 목록 맨 위 기준 각 줄의 y
+    std::vector<int> appliedRowHeight;
+    int appliedListX = 0;
+    int appliedListY = 0;
+    int appliedListWidth = 0;                     // 글자 영역 폭 (스크롤바 제외)
+    int appliedListHeight = 0;
+    int appliedScrollTick = 0;                    // 맨 위에 보이는 줄 번호
+    int appliedMaxTick = 0;
+    H3DlgScrollbar *appliedScrollbar = nullptr;
+    int appliedScrollSerial = 0;                  // 목록이 움직일 때마다 +1 (휠 이중 스크롤 방지용)
+    int appliedScrollSerialSeen = 0;
 
-    void BuildAppliedSpellList(int x, int y, int width, int height, const std::string &fallbackHint);
+    bool CollectAppliedSpellRows();
+    void BuildAppliedSpellList(int x, int y, int width, int height);
+    void LayoutAppliedSpellRows(bool redraw);
+    void ScrollAppliedSpells(int tick);
+    static void __fastcall AppliedSpellsScrollbarProc(INT32 tick, H3BaseDlg *baseDlg);
     BOOL ShowAppliedSpellPopup(int row);
 
     // [Multiverse] 비전투 창(영웅·마을 부대, 고용창)에 정보를 채운다. AddCustomStats()가 부른다.
@@ -98,4 +115,5 @@ class CreatureDlgHandler
     BOOL AddCommanderSkills();
     BOOL CreateCreatureSkillsList();
     BOOL HandleMsg(H3Msg* msg); // 우클릭 팝업 처리를 위한 메서드 선언
+    void HandleMouseWheel(H3Msg *msg); // [Multiverse] 적용된 마법 목록 휠 스크롤 (CreatureDlgHooks.cpp의 창 메시지 처리에서 매번 호출)
 };
