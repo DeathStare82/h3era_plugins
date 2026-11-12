@@ -1,4 +1,4 @@
-name: Build EnhancedCreatureInformation
+name: Build plugins
 on: [push, workflow_dispatch]
 jobs:
   build:
@@ -12,9 +12,13 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v2
 
-      - name: Build x86 Release
+      - name: Build EnhancedCreatureInformation (x86 Release)
         shell: cmd
-        run: msbuild Interface_EnhancedCreatureInformation\Interface_EnhancedCreatureInformation.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:OutDir=%GITHUB_WORKSPACE%\out\ /v:minimal
+        run: msbuild Interface_EnhancedCreatureInformation\Interface_EnhancedCreatureInformation.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:OutDir=%GITHUB_WORKSPACE%\out\creature_info\ /v:minimal
+
+      - name: Build HotaFlyLanding (x86 Release)
+        shell: cmd
+        run: msbuild Gameplay_HotaFlyLanding\Gameplay_HotaFlyLanding.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:OutDir=%GITHUB_WORKSPACE%\out\fly_landing\ /v:minimal
 
       - name: List build outputs
         shell: cmd
@@ -27,15 +31,23 @@ jobs:
       - name: Inspect outputs
         shell: cmd
         run: |
-          for %%f in (%GITHUB_WORKSPACE%\out\*.dll %GITHUB_WORKSPACE%\out\*.era) do (
+          for /r %GITHUB_WORKSPACE%\out %%f in (*.dll *.era) do (
             echo ===== %%f
             dumpbin /headers /dependents "%%f" | findstr /i /c:"machine" /c:".dll" /c:"subsystem"
           )
 
       - uses: actions/upload-artifact@v4
         with:
-          name: plugin
+          name: new_battle_interface_dlg
           path: |
-            out/*.dll
-            out/*.era
+            out/creature_info/*.dll
+            out/creature_info/*.era
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hota_fly_landing
+          path: |
+            out/fly_landing/*.dll
+            out/fly_landing/*.era
           if-no-files-found: error
