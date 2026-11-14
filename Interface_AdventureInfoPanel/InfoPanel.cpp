@@ -70,22 +70,80 @@ bool IsMouseButtonHeld(bool primary)
     return (GetAsyncKeyState(vk) & 0x8000) != 0;
 }
 
-// ERA 로그(log.txt)에 ">> AdventureInfoPanel: ..." 으로 남긴다
-void Log(const char *operation, const char *format, ...)
-{
-    char buf[512];
-    va_list args;
-    va_start(args, format);
-    std::vsnprintf(buf, sizeof(buf), format, args);
-    va_end(args);
-    Era::WriteLog("AdventureInfoPanel", operation, buf);
-}
-
 int ClampInt(int v, int lo, int hi)
 {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 } // namespace
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 진단 기록
+// ---------------------------------------------------------------------------------------------------------------------
+namespace
+{
+std::string LogFilePath()
+{
+    char path[MAX_PATH] = {};
+    const DWORD n = GetModuleFileNameA(nullptr, path, MAX_PATH); // ...\h3era HD.exe
+    std::string s(path, n);
+    const size_t slash = s.find_last_of("\\/");
+    return (slash == std::string::npos ? std::string() : s.substr(0, slash + 1)) + "AdventureInfoPanel.log";
+}
+
+void AppendLogLine(const char *line, bool truncate)
+{
+    static const std::string path = LogFilePath();
+    if (FILE *f = std::fopen(path.c_str(), truncate ? "w" : "a"))
+    {
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        std::fprintf(f, "[%02d:%02d:%02d] %s\n", st.wHour, st.wMinute, st.wSecond, line);
+        std::fclose(f);
+    }
+}
+
+const char *DescribeDef(const H3LoadedDef *def)
+{
+    static char buf[128];
+    if (!def)
+        return "not loaded";
+    std::snprintf(buf, sizeof(buf), "size %dx%d, groups %d, group0 frames %d", def->widthDEF, def->heightDEF,
+                  def->groupsCount, (def->groups && def->groups[0]) ? def->groups[0]->count : -1);
+    return buf;
+}
+
+const char *DescribePcx(const H3LoadedPcx *pcx)
+{
+    static char buf[128];
+    if (!pcx)
+        return "not loaded";
+    std::snprintf(buf, sizeof(buf), "size %dx%d, buffer %s", pcx->width, pcx->height, pcx->buffer ? "ok" : "null");
+    return buf;
+}
+} // namespace
+
+void DebugLogReset()
+{
+    char line[160];
+    std::snprintf(line, sizeof(line), "AdventureInfoPanel %s loaded (build %s %s UTC)", PLUGIN_VERSION, __DATE__,
+                  __TIME__);
+    AppendLogLine(line, true);
+    Era::WriteLog("AdventureInfoPanel", "DllMain", line);
+}
+
+void DebugLog(const char *operation, const char *format, ...)
+{
+    char msg[512];
+    va_list args;
+    va_start(args, format);
+    std::vsnprintf(msg, sizeof(msg), format, args);
+    va_end(args);
+
+    char line[600];
+    std::snprintf(line, sizeof(line), "%s: %s", operation, msg);
+    AppendLogLine(line, false);
+    Era::WriteLog("AdventureInfoPanel", operation, msg);
+}
 
 void MarkDirty()
 {
@@ -115,7 +173,7 @@ void InfoPanel::CreatePatches()
     WriteHiHook(ADDR_MOVE_HINT_2, THISCALL_, reinterpret_cast<void *>(AdvMgrDlg_MoveHint));
     WriteHiHook(ADDR_ADVMGR_FULL_UPDATE, THISCALL_, reinterpret_cast<void *>(AdvMgr_FullUpdate));
     WriteHiHook(ADDR_SET_HERO_SCREEN_REDRAW, THISCALL_, reinterpret_cast<void *>(AdvMgr_BeforeScreenRedraw));
-    Log("CreatePatches", "hooks installed");
+    DebugLog("CreatePatches", "hooks installed");
 
     m_isInited = true;
     m_isEnabled = true;
@@ -163,6 +221,7 @@ bool InfoPanel::LoadAssets()
     const bool bgDefOk = IsValidDef(backgroundDef, L::PANEL_W, L::PANEL_H, 1, 1);
     if (!bgDefOk)
     {
+        DebugLog("LoadAssets", "DsIpBg.def  -> %s (not usable, trying DsIpBg.pcx)", DescribeDef(backgroundDef));
         Release(backgroundDef);
         // PCX 는 없으면 게임이 대체 그림을 만들어 버리므로 먼저 존재 여부를 확인한다
         if (Era::PcxPngExists(res::BACKGROUND_PCX))
@@ -179,6 +238,15 @@ bool InfoPanel::LoadAssets()
     const bool dgtOk = IsValidDef(digitDef, L::DIGIT_W, L::CELL_H, 2, 11);
     const bool btnOk = IsValidDef(buttonDef, L::BTN_W, L::BTN_H, 1, 2);
 
+    if (bgDefOk)
+        DebugLog("LoadAssets", "DsIpBg.def  -> %s", DescribeDef(backgroundDef));
+    else
+        DebugLog("LoadAssets", "DsIpBg.pcx  -> %s", DescribePcx(background));
+    DebugLog("LoadAssets", "DsIpPlq.def -> %s", DescribeDef(plaqueDef));
+    DebugLog("LoadAssets", "DsIpIco.def -> %s", DescribeDef(iconDef));
+    DebugLog("LoadAssets", "DsIpDgt.def -> %s", DescribeDef(digitDef));
+    DebugLog("LoadAssets", "DsIpBtn.def -> %s", DescribeDef(buttonDef));
+
     assetsOk = bgOk && plqOk && icoOk && dgtOk && btnOk;
     if (!assetsOk)
     {
@@ -187,7 +255,7 @@ bool InfoPanel::LoadAssets()
                       "missing or wrong resources (put them in a .pac): %s%s%s%s%s- panel disabled",
                       bgOk ? "" : "DsIpBg.def(or .pcx) ", plqOk ? "" : "DsIpPlq.def ", icoOk ? "" : "DsIpIco.def ",
                       dgtOk ? "" : "DsIpDgt.def ", btnOk ? "" : "DsIpBtn.def ");
-        Era::WriteLog("AdventureInfoPanel", "LoadAssets", msg);
+        DebugLog("LoadAssets", "%s", msg);
         Release(backgroundDef);
         Release(background);
         Release(plaqueDef);
@@ -196,7 +264,7 @@ bool InfoPanel::LoadAssets()
         Release(buttonDef);
     }
     else
-        Log("LoadAssets", "all resources ok (background from %s)", bgDefOk ? "DsIpBg.def" : "DsIpBg.pcx");
+        DebugLog("LoadAssets", "all resources ok (background from %s)", bgDefOk ? "DsIpBg.def" : "DsIpBg.pcx");
     return assetsOk;
 }
 
@@ -247,7 +315,7 @@ bool InfoPanel::EnsureCreated(H3AdventureMgrDlg *dlg)
             loggedNoSpace = true;
             const int lists = globalPatcher->VarGetValue<int>("HD.AdvMgr.TownList.L", 5);
             const int panelBottom = dlg->panel ? dlg->panel->GetY() + dlg->panel->GetHeight() : -1;
-            Log("EnsureCreated", "no space - game %dx%d, panel y=%d, HD list=%d, status panel bottom=%d", gameW, gameH,
+            DebugLog("EnsureCreated", "no space - game %dx%d, panel y=%d, HD list=%d, status panel bottom=%d", gameW, gameH,
                 y, lists, panelBottom);
         }
         return false;
@@ -270,7 +338,7 @@ bool InfoPanel::EnsureCreated(H3AdventureMgrDlg *dlg)
     item->SetPcx(pcx);
     dlg->AddItem(item);
     item->DeActivate(); // 클릭/힌트는 좌표로 직접 처리한다
-    Log("EnsureCreated", "panel created at (%d,%d), game %dx%d", x, y, gameW, gameH);
+    DebugLog("EnsureCreated", "panel created at (%d,%d), game %dx%d", x, y, gameW, gameH);
 
     canvas = pcx;
     panelX = x;
@@ -370,8 +438,18 @@ void InfoPanel::DrawTime(int index, const char *text, int iconFrame, bool night)
 // 다른 창이 떠 있으면 캔버스만 갱신해 두고, 지도로 돌아왔을 때 다시 올린다.
 bool InfoPanel::Present(H3AdventureMgrDlg *dlg)
 {
-    if (!dlg || P_WindowManager->lastDlg != dlg)
+    if (!dlg)
         return false;
+    if (P_WindowManager->lastDlg != dlg)
+    {
+        if (!loggedNotTop)
+        {
+            loggedNotTop = true;
+            DebugLog("Present", "skipped: adventure map is not the top window (top=%p, map=%p)",
+                     static_cast<void *>(P_WindowManager->lastDlg), static_cast<void *>(dlg));
+        }
+        return false;
+    }
     H3DlgItem *item = dlg->GetH3DlgItem(ids::CANVAS_ITEM_ID);
     if (!item)
         return false;
@@ -383,7 +461,7 @@ bool InfoPanel::Present(H3AdventureMgrDlg *dlg)
     if (!loggedFirstPresent)
     {
         loggedFirstPresent = true;
-        Log("Present", "first draw on screen at (%d,%d)", panelX, panelY);
+        DebugLog("Present", "first draw on screen at (%d,%d)", panelX, panelY);
     }
     return true;
 }
@@ -505,6 +583,12 @@ int __stdcall InfoPanel::AdvMgr_OnShow(LoHook *h, HookContext *c)
     if (instance)
     {
         H3AdventureManager *adv = H3AdventureManager::Get();
+        if (!instance->loggedShow)
+        {
+            instance->loggedShow = true;
+            DebugLog("OnShow", "adventure map shown (manager=%p, dlg=%p)", static_cast<void *>(adv),
+                     adv ? static_cast<void *>(adv->dlg) : nullptr);
+        }
         if (adv && adv->dlg)
             instance->EnsureCreated(adv->dlg);
     }

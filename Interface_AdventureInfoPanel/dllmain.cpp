@@ -15,6 +15,7 @@ constexpr const char *INSTANCE_NAME = "EraPlugin.AdventureInfoPanel.DeathStare";
 // 게임 초기화가 끝난 뒤 후킹 설치 (Interface_EnhancedCreatureInformation 과 같은 시점)
 _LHF_(HooksInit)
 {
+    infopanel::DebugLog("HooksInit", "game initialized - installing hooks");
     infopanel::InfoPanel::Get().CreatePatches();
     return EXEC_DEFAULT;
 }
@@ -36,6 +37,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             return FALSE;
 
         Era::ConnectEra(hModule, INSTANCE_NAME);
+        infopanel::DebugLogReset(); // 게임 폴더에 AdventureInfoPanel.log 새로 작성 (버전/빌드 시각)
         infopanel::playtime::RegisterEvents();
         _PI->WriteLoHook(0x4EEAF2, HooksInit);
     }

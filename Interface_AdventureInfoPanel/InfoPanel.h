@@ -10,6 +10,11 @@ namespace infopanel
 // 다시 그려야 한다고 표시 (게임 시작/불러오기 등에서 호출)
 void MarkDirty();
 
+// 진단 기록: 게임 폴더의 AdventureInfoPanel.log (+ ERA 로그)
+constexpr const char *PLUGIN_VERSION = "0.4";
+void DebugLogReset();
+void DebugLog(const char *operation, const char *format, ...);
+
 class InfoPanel : public IGamePatch
 {
   public:
@@ -72,6 +77,8 @@ class InfoPanel : public IGamePatch
     DWORD lastPresentTick = 0;
     bool loggedFirstPresent = false;
     bool loggedNoSpace = false;
+    bool loggedShow = false;
+    bool loggedNotTop = false;
     bool pressed = false;       // 버튼이 눌린 모양인지
     bool trackingPress = false; // 버튼 위에서 왼쪽 버튼을 누른 상태인지
     DWORD lastCheckTick = 0;
