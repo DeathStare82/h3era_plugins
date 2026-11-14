@@ -38,9 +38,14 @@
 
 ## 설치
 
-1. `H3EraPlugins.sln` 에서 **Interface_AdventureInfoPanel** 을 `Release | x86` 로 빌드
-2. `Interface_AdventureInfoPanel\Release\adventure_info_panel.era` → `Mods\<모드>\eraplugins\`
-3. `Interface_AdventureInfoPanel\Data\` 의 파일 5개 → `Mods\<모드>\Data\`
+> **그림 파일(.pcx/.def)은 Data 폴더에 그냥 넣으면 게임이 찾지 못합니다. 반드시 .pac 안에 넣어야 합니다.**
+
+1. GitHub Actions 빌드 결과(`adventure_info_panel` 아티팩트)를 받아 압축을 풉니다.
+2. `adventure_info_panel.era` → 게임 폴더의 `EraPlugins\` (모드 구조라면 `Mods\<모드>\eraplugins\`)
+3. MMArchive 로 새 .pac(예: `adventure_info_panel.pac`)를 만들고 아래 파일 5개를 넣은 뒤 → 게임 폴더의 `Data\`
+4. ERT 202782~202787 이 들어 있는지 확인
+
+리소스가 없거나 크기가 다르면 패널은 표시되지 않고(게임은 튕기지 않음) ERA 로그에 `AdventureInfoPanel` 로 빠진 파일 이름이 남습니다.
 
 | 파일 | 크기 | 내용 |
 |---|---|---|

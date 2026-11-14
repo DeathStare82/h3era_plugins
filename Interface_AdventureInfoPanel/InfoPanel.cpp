@@ -106,21 +106,69 @@ void InfoPanel::CreatePatches()
 // =====================================================================================================================
 // 리소스
 // =====================================================================================================================
+// 게임이 돌려준 리소스가 "우리가 만든 그 그림"인지 확인한다.
+// 파일을 못 찾으면 게임/HD 가 빈 그림이나 default.pcx/def 같은 대체 그림을 돌려주는데,
+// 그걸 그대로 그리면 빈 버퍼(주소 0)를 읽다가 게임이 튕긴다. (1차 테스트 크래시 원인)
+namespace
+{
+bool IsValidPcx(const H3LoadedPcx *pcx, int w, int h)
+{
+    return pcx && pcx->buffer && pcx->width == w && pcx->height == h;
+}
+
+bool IsValidDef(const H3LoadedDef *def, int w, int h, int groups, int framesPerGroup)
+{
+    if (!def || !def->groups || def->widthDEF != w || def->heightDEF != h || def->groupsCount < groups)
+        return false;
+    for (int g = 0; g < groups; ++g)
+        if (!def->groups[g] || !def->groups[g]->frames || def->groups[g]->count < framesPerGroup)
+            return false;
+    return true;
+}
+
+template <typename T> void Release(T *&res)
+{
+    if (res)
+        res->Dereference();
+    res = nullptr;
+}
+} // namespace
+
 bool InfoPanel::LoadAssets()
 {
     if (assetsTried)
         return assetsOk;
     assetsTried = true;
 
-    background = H3LoadedPcx::Load(res::BACKGROUND_PCX);
+    // PCX 는 없으면 게임이 대체 그림을 만들어 버리므로 먼저 존재 여부를 확인한다
+    if (Era::PcxPngExists(res::BACKGROUND_PCX))
+        background = H3LoadedPcx::Load(res::BACKGROUND_PCX);
     plaqueDef = H3LoadedDef::Load(res::PLAQUE_DEF);
     iconDef = H3LoadedDef::Load(res::ICON_DEF);
     digitDef = H3LoadedDef::Load(res::DIGIT_DEF);
     buttonDef = H3LoadedDef::Load(res::BUTTON_DEF);
 
-    assetsOk = background && plaqueDef && iconDef && digitDef && buttonDef;
+    const bool bgOk = IsValidPcx(background, L::PANEL_W, L::PANEL_H);
+    const bool plqOk = IsValidDef(plaqueDef, L::PLAQUE_W, L::PLAQUE_H, 1, 2);
+    const bool icoOk = IsValidDef(iconDef, L::ICON_W, L::CELL_H, 1, 4);
+    const bool dgtOk = IsValidDef(digitDef, L::DIGIT_W, L::CELL_H, 2, 11);
+    const bool btnOk = IsValidDef(buttonDef, L::BTN_W, L::BTN_H, 1, 2);
+
+    assetsOk = bgOk && plqOk && icoOk && dgtOk && btnOk;
     if (!assetsOk)
-        Era::WriteLog("AdventureInfoPanel", "LoadAssets", "DsIp*.pcx / DsIp*.def not found - panel disabled");
+    {
+        char msg[256];
+        std::snprintf(msg, sizeof(msg),
+                      "missing or wrong resources (put them in a .pac): %s%s%s%s%s- panel disabled",
+                      bgOk ? "" : "DsIpBg.pcx ", plqOk ? "" : "DsIpPlq.def ", icoOk ? "" : "DsIpIco.def ",
+                      dgtOk ? "" : "DsIpDgt.def ", btnOk ? "" : "DsIpBtn.def ");
+        Era::WriteLog("AdventureInfoPanel", "LoadAssets", msg);
+        Release(background);
+        Release(plaqueDef);
+        Release(iconDef);
+        Release(digitDef);
+        Release(buttonDef);
+    }
     return assetsOk;
 }
 
