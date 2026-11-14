@@ -7,6 +7,7 @@
 
 #include <shellapi.h>
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -20,12 +21,15 @@ InfoPanel *InfoPanel::instance = nullptr;
 
 namespace
 {
-constexpr DWORD UPDATE_INTERVAL_MS = 500; // 시계 확인 주기 (분이 바뀔 때만 실제로 다시 그림)
+constexpr DWORD UPDATE_INTERVAL_MS = 500;    // 시계 확인 주기 (분이 바뀔 때만 캔버스를 다시 그림)
+constexpr DWORD REPRESENT_INTERVAL_MS = 1000; // 다른 그리기에 덮여도 1초 안에 다시 보이도록 화면에 다시 올리는 주기
 
 constexpr DWORD ADDR_ADVMGR_SHOW = 0x40730F; // 모험 지도 표시 (GraphicsEnhancements 와 같은 위치)
 constexpr DWORD ADDR_ADVMGR_PROC = 0x408710; // 모험 지도 메시지 처리. 입력이 없을 때도 NONE 으로 계속 불린다
 constexpr DWORD ADDR_MOVE_HINT_1 = 0x40EB47; // 마우스 이동 시 힌트 갱신 호출 위치 (MithrilDisplay 와 동일)
 constexpr DWORD ADDR_MOVE_HINT_2 = 0x40E1CC;
+constexpr DWORD ADDR_ADVMGR_FULL_UPDATE = 0x417446;    // 모험 지도 전체 갱신 (GraphicsEnhancements 와 동일)
+constexpr DWORD ADDR_SET_HERO_SCREEN_REDRAW = 0x417FFB; // 영웅 선택 후 화면 갱신 직전 (GraphicsEnhancements 와 동일)
 constexpr DWORD FUNC_SET_ADV_HINT = 0x40B040; // 하단 힌트 바에 문구 설정
 constexpr DWORD VAR_LAST_HINT_ITEM = 0x65F228; // 마지막으로 힌트를 띄운 항목 번호 (중복 갱신 방지용)
 constexpr int HINT_BUFFER_LIMIT = 500;
@@ -66,6 +70,17 @@ bool IsMouseButtonHeld(bool primary)
     return (GetAsyncKeyState(vk) & 0x8000) != 0;
 }
 
+// ERA 로그(log.txt)에 ">> AdventureInfoPanel: ..." 으로 남긴다
+void Log(const char *operation, const char *format, ...)
+{
+    char buf[512];
+    va_list args;
+    va_start(args, format);
+    std::vsnprintf(buf, sizeof(buf), format, args);
+    va_end(args);
+    Era::WriteLog("AdventureInfoPanel", operation, buf);
+}
+
 int ClampInt(int v, int lo, int hi)
 {
     return v < lo ? lo : (v > hi ? hi : v);
@@ -98,6 +113,9 @@ void InfoPanel::CreatePatches()
     WriteHiHook(ADDR_ADVMGR_PROC, THISCALL_, reinterpret_cast<void *>(AdvMgr_Proc));
     WriteHiHook(ADDR_MOVE_HINT_1, THISCALL_, reinterpret_cast<void *>(AdvMgrDlg_MoveHint));
     WriteHiHook(ADDR_MOVE_HINT_2, THISCALL_, reinterpret_cast<void *>(AdvMgrDlg_MoveHint));
+    WriteHiHook(ADDR_ADVMGR_FULL_UPDATE, THISCALL_, reinterpret_cast<void *>(AdvMgr_FullUpdate));
+    WriteHiHook(ADDR_SET_HERO_SCREEN_REDRAW, THISCALL_, reinterpret_cast<void *>(AdvMgr_BeforeScreenRedraw));
+    Log("CreatePatches", "hooks installed");
 
     m_isInited = true;
     m_isEnabled = true;
@@ -140,15 +158,22 @@ bool InfoPanel::LoadAssets()
         return assetsOk;
     assetsTried = true;
 
-    // PCX 는 없으면 게임이 대체 그림을 만들어 버리므로 먼저 존재 여부를 확인한다
-    if (Era::PcxPngExists(res::BACKGROUND_PCX))
-        background = H3LoadedPcx::Load(res::BACKGROUND_PCX);
+    // 배경: DsIpBg.def 를 먼저 쓰고, 없으면 DsIpBg.pcx (MMArchive 에 BMP 로 넣어 PCX 로 바뀐 것)
+    backgroundDef = H3LoadedDef::Load(res::BACKGROUND_DEF);
+    const bool bgDefOk = IsValidDef(backgroundDef, L::PANEL_W, L::PANEL_H, 1, 1);
+    if (!bgDefOk)
+    {
+        Release(backgroundDef);
+        // PCX 는 없으면 게임이 대체 그림을 만들어 버리므로 먼저 존재 여부를 확인한다
+        if (Era::PcxPngExists(res::BACKGROUND_PCX))
+            background = H3LoadedPcx::Load(res::BACKGROUND_PCX);
+    }
     plaqueDef = H3LoadedDef::Load(res::PLAQUE_DEF);
     iconDef = H3LoadedDef::Load(res::ICON_DEF);
     digitDef = H3LoadedDef::Load(res::DIGIT_DEF);
     buttonDef = H3LoadedDef::Load(res::BUTTON_DEF);
 
-    const bool bgOk = IsValidPcx(background, L::PANEL_W, L::PANEL_H);
+    const bool bgOk = bgDefOk || IsValidPcx(background, L::PANEL_W, L::PANEL_H);
     const bool plqOk = IsValidDef(plaqueDef, L::PLAQUE_W, L::PLAQUE_H, 1, 2);
     const bool icoOk = IsValidDef(iconDef, L::ICON_W, L::CELL_H, 1, 4);
     const bool dgtOk = IsValidDef(digitDef, L::DIGIT_W, L::CELL_H, 2, 11);
@@ -160,15 +185,18 @@ bool InfoPanel::LoadAssets()
         char msg[256];
         std::snprintf(msg, sizeof(msg),
                       "missing or wrong resources (put them in a .pac): %s%s%s%s%s- panel disabled",
-                      bgOk ? "" : "DsIpBg.pcx ", plqOk ? "" : "DsIpPlq.def ", icoOk ? "" : "DsIpIco.def ",
+                      bgOk ? "" : "DsIpBg.def(or .pcx) ", plqOk ? "" : "DsIpPlq.def ", icoOk ? "" : "DsIpIco.def ",
                       dgtOk ? "" : "DsIpDgt.def ", btnOk ? "" : "DsIpBtn.def ");
         Era::WriteLog("AdventureInfoPanel", "LoadAssets", msg);
+        Release(backgroundDef);
         Release(background);
         Release(plaqueDef);
         Release(iconDef);
         Release(digitDef);
         Release(buttonDef);
     }
+    else
+        Log("LoadAssets", "all resources ok (background from %s)", bgDefOk ? "DsIpBg.def" : "DsIpBg.pcx");
     return assetsOk;
 }
 
@@ -208,9 +236,23 @@ bool InfoPanel::EnsureCreated(H3AdventureMgrDlg *dlg)
     }
 
     ownerDlg = nullptr;
-    const int x = H3GameWidth::Get() - L::PANEL_RIGHT_OFFSET;
-    const int y = H3GameHeight::Get() - L::PANEL_BOTTOM_OFFSET;
-    if (x < 0 || y < 0 || !HasSpace(dlg, y) || !LoadAssets())
+    const int gameW = H3GameWidth::Get();
+    const int gameH = H3GameHeight::Get();
+    const int x = gameW - L::PANEL_RIGHT_OFFSET;
+    const int y = gameH - L::PANEL_BOTTOM_OFFSET;
+    if (x < 0 || y < 0 || !HasSpace(dlg, y))
+    {
+        if (!loggedNoSpace)
+        {
+            loggedNoSpace = true;
+            const int lists = globalPatcher->VarGetValue<int>("HD.AdvMgr.TownList.L", 5);
+            const int panelBottom = dlg->panel ? dlg->panel->GetY() + dlg->panel->GetHeight() : -1;
+            Log("EnsureCreated", "no space - game %dx%d, panel y=%d, HD list=%d, status panel bottom=%d", gameW, gameH,
+                y, lists, panelBottom);
+        }
+        return false;
+    }
+    if (!LoadAssets())
         return false;
 
     // 새 대화상자마다 새 캔버스를 만든다.
@@ -228,6 +270,7 @@ bool InfoPanel::EnsureCreated(H3AdventureMgrDlg *dlg)
     item->SetPcx(pcx);
     dlg->AddItem(item);
     item->DeActivate(); // 클릭/힌트는 좌표로 직접 처리한다
+    Log("EnsureCreated", "panel created at (%d,%d), game %dx%d", x, y, gameW, gameH);
 
     canvas = pcx;
     panelX = x;
@@ -236,6 +279,7 @@ bool InfoPanel::EnsureCreated(H3AdventureMgrDlg *dlg)
     pressed = false;
     trackingPress = false;
     dirty = true;
+    needsPresent = true;
     Update(dlg, true);
     return true;
 }
@@ -268,7 +312,10 @@ void InfoPanel::Render()
         std::snprintf(playText, sizeof(playText), "%02u:%02u", playMinutes / 60u, playMinutes % 60u);
 
     // 1) 배경 (돌판 + 테두리 + 구분선)
-    background->DrawToPcx16(0, 0, L::PANEL_W, L::PANEL_H, canvas, 0, 0, FALSE);
+    if (backgroundDef)
+        backgroundDef->DrawToPcx16(0, 0, canvas, 0, 0);
+    else
+        background->DrawToPcx16(0, 0, L::PANEL_W, L::PANEL_H, canvas, 0, 0, FALSE);
 
     // 2) 라벨 (ERT 202782 / 202783, 게임 글꼴)
     const char *labels[2] = {ert::Text(ert::LABEL_CLOCK), ert::Text(ert::LABEL_PLAYTIME)};
@@ -320,36 +367,60 @@ void InfoPanel::DrawTime(int index, const char *text, int iconFrame, bool night)
 }
 
 // 모험 지도가 맨 위 창일 때만 화면에 바로 반영한다. (마을/전투 화면 위에 덧그리지 않도록)
-// 다른 창이 떠 있으면 캔버스만 갱신해 두고, 지도로 돌아와 전체를 다시 그릴 때 함께 보인다.
-void InfoPanel::Present(H3AdventureMgrDlg *dlg)
+// 다른 창이 떠 있으면 캔버스만 갱신해 두고, 지도로 돌아왔을 때 다시 올린다.
+bool InfoPanel::Present(H3AdventureMgrDlg *dlg)
+{
+    if (!dlg || P_WindowManager->lastDlg != dlg)
+        return false;
+    H3DlgItem *item = dlg->GetH3DlgItem(ids::CANVAS_ITEM_ID);
+    if (!item)
+        return false;
+
+    item->Draw();    // 화면 버퍼에 그리고
+    item->Refresh(); // 그 영역만 실제 화면으로 보낸다
+    needsPresent = false;
+    lastPresentTick = GetTickCount();
+    if (!loggedFirstPresent)
+    {
+        loggedFirstPresent = true;
+        Log("Present", "first draw on screen at (%d,%d)", panelX, panelY);
+    }
+    return true;
+}
+
+// 화면 버퍼에만 그린다 (바로 뒤에 게임이 화면 갱신을 하는 위치에서 사용)
+void InfoPanel::DrawItemOnly(H3AdventureMgrDlg *dlg)
 {
     if (!dlg || P_WindowManager->lastDlg != dlg)
         return;
     if (H3DlgItem *item = dlg->GetH3DlgItem(ids::CANVAS_ITEM_ID))
-    {
         item->Draw();
-        item->Refresh();
-    }
 }
 
 void InfoPanel::Update(H3AdventureMgrDlg *dlg, bool force)
 {
     const DWORD now = GetTickCount();
-    if (!force && !dirty && now - lastCheckTick < UPDATE_INTERVAL_MS)
+    if (!force && !dirty && !needsPresent && now - lastCheckTick < UPDATE_INTERVAL_MS)
         return;
     lastCheckTick = now;
 
-    if (!force && !dirty)
+    bool changed = force || dirty;
+    if (!changed)
     {
         SYSTEMTIME st;
         GetLocalTime(&st);
         const int clock = st.wHour * 60 + st.wMinute;
         const int play = static_cast<int>(playtime::TotalMinutes());
-        if (clock == shownClock && play == shownPlay)
-            return;
+        changed = clock != shownClock || play != shownPlay;
     }
-    Render();
-    Present(dlg);
+    if (changed)
+    {
+        Render();
+        needsPresent = true;
+    }
+    // HD 등이 이 영역을 덮어 그려도 금방 다시 보이도록 주기적으로 다시 올린다 (194x105 영역뿐이라 부담 없음)
+    if (needsPresent || now - lastPresentTick >= REPRESENT_INTERVAL_MS)
+        Present(dlg);
 }
 
 void InfoPanel::SetPressed(H3AdventureMgrDlg *dlg, bool state)
@@ -513,5 +584,30 @@ char __stdcall InfoPanel::AdvMgrDlg_MoveHint(HiHook *h, H3AdventureMgrDlg *dlg, 
         }
     }
     return THISCALL_3(char, h->GetDefaultFunc(), dlg, x, y);
+}
+// 모험 지도 전체 갱신 직후: 게임/HD 가 오른쪽 패널을 다시 그린 위에 우리 패널을 다시 그린다
+void __stdcall InfoPanel::AdvMgr_FullUpdate(HiHook *h, H3AdventureMgrDlg *dlg, char redraw)
+{
+    THISCALL_2(void, h->GetDefaultFunc(), dlg, redraw);
+    InfoPanel *self = instance;
+    if (self && self->IsActiveFor(dlg))
+    {
+        self->DrawItemOnly(dlg);
+        self->needsPresent = true; // 다음 대기 시간에 화면에도 확실히 올린다
+    }
+}
+
+// 영웅을 고른 뒤 화면을 갱신하기 직전: 우리 패널을 먼저 버퍼에 그려 둔다
+void __stdcall InfoPanel::AdvMgr_BeforeScreenRedraw(HiHook *h, H3WindowManager *mgr, int x, int y, int w, int hgt)
+{
+    InfoPanel *self = instance;
+    if (self)
+    {
+        H3AdventureManager *adv = H3AdventureManager::Get();
+        H3AdventureMgrDlg *dlg = adv ? adv->dlg : nullptr;
+        if (self->IsActiveFor(dlg))
+            self->DrawItemOnly(dlg);
+    }
+    THISCALL_5(void, h->GetDefaultFunc(), mgr, x, y, w, hgt);
 }
 } // namespace infopanel

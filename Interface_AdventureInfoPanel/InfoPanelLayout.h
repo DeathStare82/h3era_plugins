@@ -83,7 +83,8 @@ constexpr int NIGHT_START_HOUR = 18;
 
 namespace res
 {
-constexpr const char *BACKGROUND_PCX = "DsIpBg.pcx";
+constexpr const char *BACKGROUND_DEF = "DsIpBg.def"; // 배경 (우선 사용)
+constexpr const char *BACKGROUND_PCX = "DsIpBg.pcx"; // 배경 (DEF 가 없을 때 예비)
 constexpr const char *PLAQUE_DEF = "DsIpPlq.def";
 constexpr const char *ICON_DEF = "DsIpIco.def";
 constexpr const char *DIGIT_DEF = "DsIpDgt.def";
