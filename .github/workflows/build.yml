@@ -20,6 +20,10 @@ jobs:
         shell: cmd
         run: msbuild Gameplay_HotaFlyLanding\Gameplay_HotaFlyLanding.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:OutDir=%GITHUB_WORKSPACE%\out\fly_landing\ /v:minimal
 
+      - name: Build AdventureInfoPanel (x86 Release)
+        shell: cmd
+        run: msbuild Interface_AdventureInfoPanel\Interface_AdventureInfoPanel.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:OutDir=%GITHUB_WORKSPACE%\out\adventure_info_panel\ /v:minimal
+
       - name: List build outputs
         shell: cmd
         run: dir /s /b %GITHUB_WORKSPACE%\out
@@ -50,4 +54,20 @@ jobs:
           path: |
             out/fly_landing/*.dll
             out/fly_landing/*.era
+          if-no-files-found: error
+
+      # 모드 폴더에 그대로 풀 수 있는 모양으로 묶기: eraplugins\*.era + Data\*.pcx/*.def
+      - name: Package AdventureInfoPanel (mod folder layout)
+        shell: cmd
+        run: |
+          mkdir "%GITHUB_WORKSPACE%\package\adventure_info_panel\eraplugins"
+          mkdir "%GITHUB_WORKSPACE%\package\adventure_info_panel\Data"
+          for %%f in ("%GITHUB_WORKSPACE%\out\adventure_info_panel\*.era" "%GITHUB_WORKSPACE%\out\adventure_info_panel\*.dll") do copy /y "%%f" "%GITHUB_WORKSPACE%\package\adventure_info_panel\eraplugins\"
+          copy /y "Interface_AdventureInfoPanel\Data\*.*" "%GITHUB_WORKSPACE%\package\adventure_info_panel\Data\"
+          dir /s /b "%GITHUB_WORKSPACE%\package\adventure_info_panel"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adventure_info_panel
+          path: package/adventure_info_panel/
           if-no-files-found: error
