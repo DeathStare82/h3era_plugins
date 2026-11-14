@@ -11,7 +11,7 @@ namespace infopanel
 void MarkDirty();
 
 // 진단 기록: 게임 폴더의 AdventureInfoPanel.log (+ ERA 로그)
-constexpr const char *PLUGIN_VERSION = "0.4";
+constexpr const char *PLUGIN_VERSION = "0.5";
 void DebugLogReset();
 void DebugLog(const char *operation, const char *format, ...);
 

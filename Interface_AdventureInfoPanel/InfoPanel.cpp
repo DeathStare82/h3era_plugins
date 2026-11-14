@@ -235,7 +235,7 @@ bool InfoPanel::LoadAssets()
     const bool bgOk = bgDefOk || IsValidPcx(background, L::PANEL_W, L::PANEL_H);
     const bool plqOk = IsValidDef(plaqueDef, L::PLAQUE_W, L::PLAQUE_H, 1, 2);
     const bool icoOk = IsValidDef(iconDef, L::ICON_W, L::CELL_H, 1, 4);
-    const bool dgtOk = IsValidDef(digitDef, L::DIGIT_W, L::CELL_H, 2, 11);
+    const bool dgtOk = IsValidDef(digitDef, L::DIGIT_W, L::CELL_H, 1, L::frame::DIGIT_FRAMES);
     const bool btnOk = IsValidDef(buttonDef, L::BTN_W, L::BTN_H, 1, 2);
 
     if (bgDefOk)
@@ -420,16 +420,16 @@ void InfoPanel::DrawTime(int index, const char *text, int iconFrame, bool night)
     iconDef->DrawToPcx16(0, iconFrame, canvas, x, y);
     x += L::ICON_W + L::ICON_GAP;
 
-    const int group = night ? L::frame::DIGIT_GROUP_NIGHT : L::frame::DIGIT_GROUP_DAY;
+    const int frameOffset = night ? L::frame::DIGIT_NIGHT_OFFSET : 0;
     for (const char *p = text; *p; ++p)
     {
         const bool colon = *p == ':';
         if (!colon && (*p < '0' || *p > '9'))
             continue;
         const int w = colon ? L::COLON_W : L::DIGIT_W;
-        const int frame = colon ? L::frame::DIGIT_COLON : *p - '0';
+        const int frame = frameOffset + (colon ? L::frame::DIGIT_COLON : *p - '0');
         // 숫자 칸은 배경까지 들어 있는 불투명 그림이라 겹치지 않게 칸 폭만큼만 잘라 그린다
-        digitDef->DrawToPcx16(group, frame, 0, 0, w, L::CELL_H, canvas, x, y);
+        digitDef->DrawToPcx16(0, frame, 0, 0, w, L::CELL_H, canvas, x, y);
         x += w;
     }
 }

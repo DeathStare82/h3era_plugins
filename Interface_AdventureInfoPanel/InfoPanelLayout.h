@@ -69,9 +69,11 @@ constexpr int ICON_SUN = 0;
 constexpr int ICON_MOON = 1;
 constexpr int ICON_HOURGLASS_DAY = 2;
 constexpr int ICON_HOURGLASS_NIGHT = 3;
-constexpr int DIGIT_GROUP_DAY = 0;
-constexpr int DIGIT_GROUP_NIGHT = 1;
+// 숫자 DEF 는 한 그룹에 22프레임: 0~9 숫자, 10 ':' (낮) / 11~21 같은 순서 (밤)
+// (게임이 DEF 의 두 번째 그룹을 읽지 않아서 한 그룹으로 합침)
 constexpr int DIGIT_COLON = 10;
+constexpr int DIGIT_NIGHT_OFFSET = 11;
+constexpr int DIGIT_FRAMES = 22;
 constexpr int BUTTON_NORMAL = 0;
 constexpr int BUTTON_PRESSED = 1;
 } // namespace frame
