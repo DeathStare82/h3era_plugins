@@ -2,6 +2,7 @@
 #include "BattleShadows.h"
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 namespace battle_shadows
@@ -12,7 +13,7 @@ constexpr INT32 COLUMNS = 17;
 constexpr INT32 BATTLE_HEXES = 187;
 constexpr INT32 MAX_RADIUS = 4;
 constexpr INT32 FREE_HEX_SLOTS = 10; // x1..x10 of BattleShadow_Hexes
-constexpr INT32 PLUGIN_VERSION = 3;  // reported by BattleShadow_Debug
+constexpr INT32 PLUGIN_VERSION = 4;  // reported by BattleShadow_Debug
 constexpr const char *MOUSE_HINT_EVENT = "OnBattleMouseHint"; // !?MM0
 // ERA fires "<trigger name>_Quit" after all handlers of a trigger when a function with that name exists.
 constexpr const char *MOUSE_HINT_QUIT_EVENT = "OnBattleMouseHint_Quit";
@@ -24,13 +25,28 @@ constexpr UINT SET_CURSOR_SHADOW = 0x493F10;  // thiscall(combat, hex, flag); he
 constexpr UINT SET_AREA_SHADOW = 0x493A20;    // thiscall(combat, hex, H3Vector<INT32> *hexes, BOOL8)
 constexpr UINT SET_STACK_CONTOUR = 0x43ED00;  // thiscall(stack, BOOL8 on) -> BOOL8 changed
 constexpr UINT REDRAW_BATTLEFIELD = 0x493FC0; // thiscall(combat, flip, setRedraws, useRedraws, wait, background, doWait)
-// BattleMgr::DrawGrid rebuilds the background layer (grid + shadows) that the battlefield redraw reuses.
-// It skips all shadows while H3CombatManager::doNotDrawShade is set, so this plugin paints its own hexes
-// after it, with the same picture and call the game uses (H3API ShadeSquare, copied from 0x4935B9).
+// BattleMgr::DrawGrid rebuilds the background layer (H3CombatManager::drawBuffer: ground, grid, shadows) that the
+// battlefield redraw reuses; obstacles and stacks are drawn over it later. While doNotDrawShade is set it leaves
+// the layer untouched, so this plugin paints its hexes itself right after DrawGrid and saves the pixels under
+// them first, to put them back before the next paint.
 constexpr UINT DRAW_GRID = 0x4934B0;            // thiscall(combat, BOOL, BOOL)
 constexpr UINT CURSOR_SHADOW_OPTION = 0x698810; // game option "cursor shadow" (diagnostics only)
+// CCellShd.pcx is the hex mask. Its pixels use the Heroes 3 special palette slots, which mean "darken" rather than
+// a color (copying its raw colors gives solid blue hexes). Amount to darken, out of 256, per slot; VCMI uses the
+// same table for this picture: 0 transparent, 1..2 shadow border, 3..4 shadow body.
+constexpr UINT8 SHADOW_ALPHA[] = {0, 32, 64, 128, 128};
+constexpr UINT8 SHADOW_ALPHA_OTHER = 128;
 constexpr INT32 HEX_WIDTH = 0x2D;
 constexpr INT32 HEX_HEIGHT = 0x34;
+
+struct SavedArea
+{
+    INT32 x;
+    INT32 y;
+    INT32 width;
+    INT32 height;
+    std::vector<UINT8> bytes;
+};
 
 struct ShadowState
 {
@@ -43,6 +59,9 @@ struct ShadowState
     std::vector<H3CombatCreature *> hintStartContours;
     INT32 gridRebuilds = 0;                   // DrawGrid calls in this battle (diagnostics)
     INT32 lastDrawn = 0;                      // hexes painted by this plugin at the last DrawGrid (diagnostics)
+    std::vector<SavedArea> savedAreas;        // layer pixels under our painted hexes, in paint order
+    H3LoadedPcx16 *savedLayer = nullptr;
+    INT32 savedBytesPerPixel = 0;
 };
 ShadowState state;
 
@@ -99,12 +118,105 @@ H3Vector<INT32> &NativeHexes()
     return *H3BattleShadowHexes::Get();
 }
 
+INT32 BytesPerPixel(const H3LoadedPcx16 *layer)
+{
+    return layer->scanlineSize >= layer->width * 4 ? 4 : 2; // HD 32-bit mode or the game's 16-bit mode
+}
+
+// Puts back the layer pixels saved under our last paint (newest first, because neighbouring hexes overlap).
+void RestoreSavedAreas(H3CombatManager *combat)
+{
+    H3LoadedPcx16 *layer = combat ? combat->drawBuffer : nullptr;
+    if (layer && layer == state.savedLayer && layer->buffer && BytesPerPixel(layer) == state.savedBytesPerPixel)
+    {
+        const INT32 bpp = state.savedBytesPerPixel;
+        for (auto area = state.savedAreas.rbegin(); area != state.savedAreas.rend(); ++area)
+        {
+            if (area->x + area->width > layer->width || area->y + area->height > layer->height)
+                continue;
+            const INT32 rowBytes = area->width * bpp;
+            for (INT32 row = 0; row < area->height; ++row)
+                std::memcpy(layer->GetRow(area->y + row) + area->x * bpp, area->bytes.data() + row * rowBytes, rowBytes);
+        }
+    }
+    state.savedAreas.clear();
+    state.savedLayer = nullptr;
+}
+
+UINT32 DarkenChannel(UINT32 color, UINT32 mask, UINT32 keep)
+{
+    return (((color & mask) * keep) >> 8) & mask;
+}
+
+// Darkens one hex of the layer through the CCellShd mask, saving the pixels underneath first.
+void PaintHex(H3LoadedPcx16 *layer, const H3LoadedPcx *mask, INT32 left, INT32 top)
+{
+    const INT32 maskWidth = std::min(mask->width, HEX_WIDTH);
+    const INT32 maskHeight = std::min(mask->height, HEX_HEIGHT);
+    const INT32 x0 = std::max(left, 0);
+    const INT32 y0 = std::max(top, 0);
+    const INT32 x1 = std::min(left + maskWidth, layer->width);
+    const INT32 y1 = std::min(top + maskHeight, layer->height);
+    if (x0 >= x1 || y0 >= y1)
+        return;
+
+    const INT32 bpp = BytesPerPixel(layer);
+    SavedArea saved{x0, y0, x1 - x0, y1 - y0, {}};
+    const INT32 rowBytes = saved.width * bpp;
+    saved.bytes.resize(size_t(rowBytes) * saved.height);
+    for (INT32 y = y0; y < y1; ++y)
+        std::memcpy(saved.bytes.data() + (y - y0) * rowBytes, layer->GetRow(y) + x0 * bpp, rowBytes);
+    state.savedAreas.push_back(std::move(saved));
+
+    UINT32 red = H3RedMask::Get();
+    UINT32 green = H3GreenMask::Get();
+    UINT32 blue = H3BlueMask::Get();
+    if (!red || !green || !blue)
+    {
+        red = 0xF800; // RGB565
+        green = 0x07E0;
+        blue = 0x001F;
+    }
+
+    for (INT32 y = y0; y < y1; ++y)
+    {
+        const UINT8 *maskRow = mask->GetRow(y - top);
+        PUINT8 layerRow = layer->GetRow(y);
+        for (INT32 x = x0; x < x1; ++x)
+        {
+            const UINT8 slot = maskRow[x - left];
+            const UINT32 alpha = size_t(slot) < sizeof(SHADOW_ALPHA) ? SHADOW_ALPHA[slot] : SHADOW_ALPHA_OTHER;
+            if (!alpha)
+                continue;
+            const UINT32 keep = 256 - alpha;
+            PUINT8 pixel = layerRow + x * bpp;
+            if (bpp == 4)
+            {
+                for (INT32 channel = 0; channel < 3; ++channel) // B, G, R; alpha byte stays
+                    pixel[channel] = UINT8((pixel[channel] * keep) >> 8);
+            }
+            else
+            {
+                UINT16 color = 0;
+                std::memcpy(&color, pixel, sizeof(color));
+                color = UINT16(DarkenChannel(color, red, keep) | DarkenChannel(color, green, keep) |
+                               DarkenChannel(color, blue, keep));
+                std::memcpy(pixel, &color, sizeof(color));
+            }
+        }
+    }
+}
+
 // Paints our hexes on the layer DrawGrid has just built. Hexes the game shaded itself are skipped,
 // so a hex is never darkened twice.
 INT32 PaintOwnShadows(H3CombatManager *combat)
 {
-    if (!combat->CCellShdPcx || !combat->drawBuffer)
+    H3LoadedPcx16 *layer = combat->drawBuffer;
+    const H3LoadedPcx *mask = combat->CCellShdPcx;
+    if (!layer || !layer->buffer || !mask || !mask->buffer)
         return 0;
+    state.savedLayer = layer;
+    state.savedBytesPerPixel = BytesPerPixel(layer);
     H3Vector<INT32> &native = NativeHexes();
     const bool gameDrewItsList = !combat->doNotDrawShade;
     INT32 painted = 0;
@@ -113,7 +225,7 @@ INT32 PaintOwnShadows(H3CombatManager *combat)
         if (gameDrewItsList && std::find(native.begin(), native.end(), hex) != native.end())
             continue;
         const H3CombatSquare &square = combat->squares[hex];
-        combat->CCellShdPcx->DrawToPcx16(0, 0, HEX_WIDTH, HEX_HEIGHT, combat->drawBuffer, square.left, square.top, TRUE);
+        PaintHex(layer, mask, square.left, square.top);
         ++painted;
     }
     return painted;
@@ -324,6 +436,8 @@ void __stdcall OnLeaveBattleContext(Era::TEvent *)
 {
     Forget();
     LeaveHint();
+    state.savedAreas.clear(); // the battle layer is gone or rebuilt; never write old pixels into it
+    state.savedLayer = nullptr;
 }
 
 void __stdcall OnBattleStart(Era::TEvent *event)
@@ -338,6 +452,8 @@ void __stdcall OnBattleStart(Era::TEvent *event)
 
 int __stdcall HookDrawGrid(HiHook *hook, H3CombatManager *combat, INT32 arg1, INT32 arg2)
 {
+    // Undo our previous paint first: when the game leaves the layer untouched, nothing else would erase it.
+    RestoreSavedAreas(combat);
     const int result = THISCALL_3(int, hook->GetDefaultFunc(), combat, arg1, arg2);
     ++state.gridRebuilds;
     state.lastDrawn = HasState() && CanDraw(combat) ? PaintOwnShadows(combat) : 0;
