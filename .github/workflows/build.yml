@@ -71,3 +71,22 @@ jobs:
           name: adventure_info_panel
           path: package/adventure_info_panel/
           if-no-files-found: error
+
+      # 전투 헥스 그림자 플러그인: 실패해도 위의 다른 결과물은 이미 올라가 있도록 맨 끝에 둠
+      - name: Build BattleShadows (x86 Release)
+        shell: cmd
+        run: msbuild Combat_BattleShadows\Combat_BattleShadows.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:OutDir=%GITHUB_WORKSPACE%\out\battle_shadows\ /v:minimal
+
+      - name: Package BattleShadows (mod folder layout)
+        shell: cmd
+        run: |
+          mkdir "%GITHUB_WORKSPACE%\package\battle_shadows\eraplugins"
+          for %%f in ("%GITHUB_WORKSPACE%\out\battle_shadows\*.era" "%GITHUB_WORKSPACE%\out\battle_shadows\*.dll") do copy /y "%%f" "%GITHUB_WORKSPACE%\package\battle_shadows\eraplugins\"
+          copy /y "Combat_BattleShadows\battle_shadows_example.erm" "%GITHUB_WORKSPACE%\package\battle_shadows\"
+          dir /s /b "%GITHUB_WORKSPACE%\package\battle_shadows"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: battle_shadows
+          path: package/battle_shadows/
+          if-no-files-found: error
