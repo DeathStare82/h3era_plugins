@@ -1,0 +1,16 @@
+ZVSE2
+
+; Combat_BattleShadows example. Put this file into the Data\s folder of your mod.
+; The plugin removes the old shadows by itself every time the MM0 trigger starts again.
+
+; Example 1 (on): shadow around the hex under the mouse.
+;   P(hex)/(radius)/(contour): radius 0..4, 0 = only the mouse hex; contour 1 = blinking blue outline.
+!?MM0;
+!!MM:D?(hex:y);                                   [hex under the mouse]
+!!FU(BattleShadow_Radius):P(hex)/1/1;
+
+; Example 2 (off): free shape, up to 10 hexes. -1 = empty slot. The 11th value is the contour switch.
+; To turn it on, replace the first character * with ! on the next two lines.
+; If both examples are on, both shapes are shown together.
+*?MM0;
+*!FU(BattleShadow_Hexes):P52/53/54/71/-1/-1/-1/-1/-1/-1/1;
