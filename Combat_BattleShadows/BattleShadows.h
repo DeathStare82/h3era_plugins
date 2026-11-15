@@ -8,6 +8,7 @@ namespace battle_shadows
 //   !!FU(BattleShadow_Radius):P(hex)/(radius 0..4)/(contour);
 //   !!FU(BattleShadow_Hexes):P(hex1)/.../(hex10)/(contour);   -1 = unused slot
 //   !!FU(BattleShadow_Clear):P;
+//   !!FU(BattleShadow_Debug):P?(version)/...  diagnostics, see README.md
 // Everything is removed automatically before every !?MM0 (OnBattleMouseHint) and battle action.
 void RegisterEvents();
 void InstallHooks(PatcherInstance *patcher);

@@ -47,6 +47,27 @@ ERA는 `!!FU(이름):P`를 같은 이름으로 등록된 플러그인에도 전�
 !!FU(BattleShadow_Clear):P;
 ```
 
+### 진단: `BattleShadow_Debug`
+
+그림자가 안 보일 때 원인을 찾는 함수입니다. MM0 트리거 맨 끝에 아래 두 줄을 넣으면 전투 화면 아래 힌트 줄에
+플러그인 상태가 표시됩니다.
+
+```erm
+!!FU(BattleShadow_Debug):P?y20/?y21/?y22/?y23/?y24/?y25/?y26/?y27/?y28;
+!!MM:M^v%y20 mine=%y21 inList=%y22 list=%y23 noShade=%y24 option=%y25 updates=%y26 anchor=%y27 cursor=%y28^;
+```
+
+| 표시 | 뜻 |
+|---|---|
+| `v` | 플러그인 버전. 0이면 플러그인이 호출되지 않은 것 |
+| `mine` | 플러그인이 칠하려는 헥스 수 |
+| `inList` | 그중 게임 그림자 목록에 실제로 들어 있는 수 |
+| `list` | 게임 그림자 목록 전체 크기 |
+| `noShade` | 게임이 그림자 그리기를 막고 있으면 1 |
+| `option` | 게임 옵션 "커서 그림자"가 켜져 있으면 1 |
+| `updates` | 이번 전투에서 게임이 그림자 목록을 다시 만든 횟수 |
+| `anchor`, `cursor` | 그림자가 속한 헥스와 지금 커서 헥스 |
+
 ## 헥스 번호
 
 전장은 가로 17칸, 세로 11줄입니다. `헥스 번호 = 줄 × 17 + 칸`이고, 맨 위 줄 맨 왼쪽이 0입니다.
@@ -93,7 +114,7 @@ ZVSE2
 - 게임이 그림자 목록을 다시 만드는 `0x493F10`, `0x493A20`, `0x493EF0`에 HiHook을 겁니다. 원본 호출 전에
   플러그인 항목을 빼고, 원본 호출 뒤 커서가 같은 칸이면 다시 넣습니다.
 - 반경 계산은 직접 합니다. 어느 줄이 오른쪽으로 밀려 있는지는 실제 헥스 위치(`squares[].left`)에서 읽습니다.
-- 다시 그리기는 `0x493FC0`을 `aoe_attack.cpp`의 범위 사격 미리보기와 같은 인자로 호출합니다. MM0 안에서는 ERA의
+- 목록을 바꾼 뒤에는 `0x4934B0`(BattleMgr::DrawGrid)으로 격자·그림자 층을 다시 만들고, 다시 그리기는 `0x493FC0`을 `aoe_attack.cpp`의 범위 사격 미리보기와 같은 인자로 호출합니다. MM0 안에서는 ERA의
   `OnBattleMouseHint_Quit` 이벤트에서 한 번만 그립니다.
 - 주소와 인자는 저장소의 `Combat_SwitchingCreatureAction/aoe_attack.cpp`,
   `ERA_SystemOptionsExtension/CombatSettings.cpp`와 같습니다. 디스어셈블리로 따로 확인하지는 않았습니다.

@@ -14,3 +14,8 @@ ZVSE2
 ; If both examples are on, both shapes are shown together.
 *?MM0;
 *!FU(BattleShadow_Hexes):P52/53/54/71/-1/-1/-1/-1/-1/-1/1;
+
+; Diagnostics (off): shows the plugin state in the battle hint line instead of the normal hint.
+; To turn it on, replace the first character * with ! on the next two lines.
+*!FU(BattleShadow_Debug):P?y20/?y21/?y22/?y23/?y24/?y25/?y26/?y27/?y28;
+*!MM:M^v%y20 mine=%y21 inList=%y22 list=%y23 noShade=%y24 option=%y25 updates=%y26 anchor=%y27 cursor=%y28^;
