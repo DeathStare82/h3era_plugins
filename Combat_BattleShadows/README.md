@@ -54,18 +54,18 @@ ERA는 `!!FU(이름):P`를 같은 이름으로 등록된 플러그인에도 전�
 
 ```erm
 !!FU(BattleShadow_Debug):P?y20/?y21/?y22/?y23/?y24/?y25/?y26/?y27/?y28;
-!!MM:M^v%y20 mine=%y21 inList=%y22 list=%y23 noShade=%y24 option=%y25 updates=%y26 anchor=%y27 cursor=%y28^;
+!!MM:M^v%y20 mine=%y21 drawn=%y22 list=%y23 noShade=%y24 option=%y25 rebuilds=%y26 anchor=%y27 cursor=%y28^;
 ```
 
 | 표시 | 뜻 |
 |---|---|
 | `v` | 플러그인 버전. 0이면 플러그인이 호출되지 않은 것 |
 | `mine` | 플러그인이 칠하려는 헥스 수 |
-| `inList` | 그중 게임 그림자 목록에 실제로 들어 있는 수 |
-| `list` | 게임 그림자 목록 전체 크기 |
-| `noShade` | 게임이 그림자 그리기를 막고 있으면 1 |
+| `drawn` | 마지막으로 그림자 판을 다시 만들 때 플러그인이 직접 칠한 수 |
+| `list` | 게임 자체 그림자 목록 크기 |
+| `noShade` | 게임이 자기 그림자 그리기를 꺼 둔 상태면 1 (플러그인 그림자는 상관없이 그려짐) |
 | `option` | 게임 옵션 "커서 그림자"가 켜져 있으면 1 |
-| `updates` | 이번 전투에서 게임이 그림자 목록을 다시 만든 횟수 |
+| `rebuilds` | 이번 전투에서 그림자 판(격자 층)을 다시 만든 횟수 |
 | `anchor`, `cursor` | 그림자가 속한 헥스와 지금 커서 헥스 |
 
 ## 헥스 번호
@@ -107,15 +107,17 @@ ZVSE2
 
 ## 개발자용 메모
 
-- 게임이 커서 그림자를 그릴 때 쓰는 전역 목록(H3API `H3BattleShadowHexes`)에 헥스를 넣습니다. 그리기와
-  HD 32비트 처리는 게임 코드가 그대로 합니다.
+- 전투 화면은 배경·격자·그림자를 한 장의 판으로 미리 그려 두고(`0x4934B0`, BattleMgr::DrawGrid), 다시 그릴 때는
+  이 판을 재사용합니다. 플러그인은 DrawGrid에 HiHook을 걸어, 원본이 판을 만든 직후 자기 헥스에 게임과 같은
+  그림(`CCellShd.pcx`)과 같은 방법(H3API `ShadeSquare`, `0x4935B9`에서 옮긴 코드)으로 그림자를 칠합니다.
+- 게임은 `doNotDrawShade`가 켜져 있으면 자기 그림자를 하나도 그리지 않습니다(예: 대화상자를 닫은 직후 같은
+  상태). 플러그인 그림자는 이 값과 상관없이 칠합니다. 게임이 같은 칸을 이미 칠했으면 두 번 칠하지 않습니다.
+- 그림자가 바뀌면 DrawGrid를 부른 뒤 `0x493FC0`으로 전장을 다시 그립니다. MM0 안에서는 ERA의
+  `OnBattleMouseHint_Quit` 이벤트에서 한 번만 그립니다.
 - 테두리는 `0x43ED00`(`H3CombatCreature::highlightContour`)으로 켭니다. 게임이 이미 켜 둔 테두리는 건드리지
   않습니다.
-- 게임이 그림자 목록을 다시 만드는 `0x493F10`, `0x493A20`, `0x493EF0`에 HiHook을 겁니다. 원본 호출 전에
-  플러그인 항목을 빼고, 원본 호출 뒤 커서가 같은 칸이면 다시 넣습니다.
+- 게임이 커서 그림자를 바꾸는 `0x493F10`, `0x493A20`에도 HiHook을 걸어, 커서가 MM0 없이 다른 칸으로 갔으면
+  플러그인 그림자를 지웁니다.
 - 반경 계산은 직접 합니다. 어느 줄이 오른쪽으로 밀려 있는지는 실제 헥스 위치(`squares[].left`)에서 읽습니다.
-- 목록을 바꾼 뒤에는 `0x4934B0`(BattleMgr::DrawGrid)으로 격자·그림자 층을 다시 만들고, 다시 그리기는 `0x493FC0`을 `aoe_attack.cpp`의 범위 사격 미리보기와 같은 인자로 호출합니다. MM0 안에서는 ERA의
-  `OnBattleMouseHint_Quit` 이벤트에서 한 번만 그립니다.
-- 주소와 인자는 저장소의 `Combat_SwitchingCreatureAction/aoe_attack.cpp`,
-  `ERA_SystemOptionsExtension/CombatSettings.cpp`와 같습니다. 디스어셈블리로 따로 확인하지는 않았습니다.
-  마우스를 움직일 때 크래시가 나면 위 세 함수의 인자 수부터 확인하세요.
+- 주소와 인자는 저장소의 `Combat_SwitchingCreatureAction`, `ERA_SystemOptionsExtension`과 같습니다.
+  디스어셈블리로 따로 확인하지는 않았습니다.

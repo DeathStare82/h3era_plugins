@@ -12,35 +12,37 @@ constexpr INT32 COLUMNS = 17;
 constexpr INT32 BATTLE_HEXES = 187;
 constexpr INT32 MAX_RADIUS = 4;
 constexpr INT32 FREE_HEX_SLOTS = 10; // x1..x10 of BattleShadow_Hexes
+constexpr INT32 PLUGIN_VERSION = 3;  // reported by BattleShadow_Debug
 constexpr const char *MOUSE_HINT_EVENT = "OnBattleMouseHint"; // !?MM0
 // ERA fires "<trigger name>_Quit" after all handlers of a trigger when a function with that name exists.
 constexpr const char *MOUSE_HINT_QUIT_EVENT = "OnBattleMouseHint_Quit";
 
 // Native calls already used in this repository with the same arguments:
-// Combat_SwitchingCreatureAction/aoe_attack.cpp (0x493F10, 0x493A20, 0x43ED00, 0x493FC0) and
-// ERA_SystemOptionsExtension/CombatSettings.cpp (0x493EF0). H3API names the drawn list H3BattleShadowHexes.
+// Combat_SwitchingCreatureAction (0x493F10, 0x493A20, 0x43ED00, 0x493FC0, 0x4934B0) and
+// ERA_SystemOptionsExtension (0x4934B0 named BattleMgr::DrawGrid).
 constexpr UINT SET_CURSOR_SHADOW = 0x493F10;  // thiscall(combat, hex, flag); hex -1 clears
 constexpr UINT SET_AREA_SHADOW = 0x493A20;    // thiscall(combat, hex, H3Vector<INT32> *hexes, BOOL8)
-constexpr UINT CLEAR_SHADOWS = 0x493EF0;      // cdecl()
 constexpr UINT SET_STACK_CONTOUR = 0x43ED00;  // thiscall(stack, BOOL8 on) -> BOOL8 changed
 constexpr UINT REDRAW_BATTLEFIELD = 0x493FC0; // thiscall(combat, flip, setRedraws, useRedraws, wait, background, doWait)
-// BattleMgr::DrawGrid: rebuilds the grid + shadow layer from the shadow list. The battlefield redraw only reuses
-// that layer, so it must run after every change of the list (ERA_SystemOptionsExtension, ActionSwitcher).
+// BattleMgr::DrawGrid rebuilds the background layer (grid + shadows) that the battlefield redraw reuses.
+// It skips all shadows while H3CombatManager::doNotDrawShade is set, so this plugin paints its own hexes
+// after it, with the same picture and call the game uses (H3API ShadeSquare, copied from 0x4935B9).
 constexpr UINT DRAW_GRID = 0x4934B0;            // thiscall(combat, BOOL, BOOL)
-constexpr UINT CURSOR_SHADOW_OPTION = 0x698810; // game option "cursor shadow"
-constexpr INT32 PLUGIN_VERSION = 2;             // reported by BattleShadow_Debug
+constexpr UINT CURSOR_SHADOW_OPTION = 0x698810; // game option "cursor shadow" (diagnostics only)
+constexpr INT32 HEX_WIDTH = 0x2D;
+constexpr INT32 HEX_HEIGHT = 0x34;
 
 struct ShadowState
 {
     std::vector<INT32> hexes;                 // requested by ERM, unique
-    std::vector<INT32> appended;              // entries this plugin currently owns in the native list
     std::vector<H3CombatCreature *> contours; // stacks whose contour this plugin switched on
     INT32 anchorHex = -1;                     // cursor hex the current shadows belong to
     bool deferRedraw = false;                 // inside !?MM0: redraw once from the _Quit handler
     bool quitEventSeen = false;               // this ERA build fires OnBattleMouseHint_Quit
     std::vector<INT32> hintStartHexes;        // state before the current !?MM0, to skip identical redraws
     std::vector<H3CombatCreature *> hintStartContours;
-    INT32 nativeUpdates = 0;                  // native shadow-list rebuilds seen in this battle (diagnostics)
+    INT32 gridRebuilds = 0;                   // DrawGrid calls in this battle (diagnostics)
+    INT32 lastDrawn = 0;                      // hexes painted by this plugin at the last DrawGrid (diagnostics)
 };
 ShadowState state;
 
@@ -48,6 +50,11 @@ H3CombatManager *ActiveCombat()
 {
     H3CombatManager *combat = H3CombatManager::Get();
     return combat && combat->dlg ? combat : nullptr;
+}
+
+bool CanDraw(H3CombatManager *combat)
+{
+    return combat && combat->dlg && !combat->IsHiddenBattle();
 }
 
 INT32 CursorHex(H3CombatManager *combat)
@@ -87,53 +94,43 @@ bool HasState()
     return !state.hexes.empty() || !state.contours.empty();
 }
 
-void RebuildShadowLayer(H3CombatManager *combat)
-{
-    if (combat && combat->dlg && !combat->IsHiddenBattle())
-        THISCALL_3(void, DRAW_GRID, combat, FALSE, TRUE);
-}
-
-void Redraw(H3CombatManager *combat)
-{
-    if (!combat || !combat->dlg || combat->IsHiddenBattle())
-        return;
-    RebuildShadowLayer(combat);
-    THISCALL_7(void, REDRAW_BATTLEFIELD, combat, TRUE, TRUE, FALSE, 0, TRUE, FALSE);
-}
-
 H3Vector<INT32> &NativeHexes()
 {
     return *H3BattleShadowHexes::Get();
 }
 
-void RemoveNativeHexes()
+// Paints our hexes on the layer DrawGrid has just built. Hexes the game shaded itself are skipped,
+// so a hex is never darkened twice.
+INT32 PaintOwnShadows(H3CombatManager *combat)
 {
+    if (!combat->CCellShdPcx || !combat->drawBuffer)
+        return 0;
     H3Vector<INT32> &native = NativeHexes();
-    for (const INT32 hex : state.appended)
-    {
-        // Our entries were appended after the game's own ones, so search from the end.
-        for (UINT32 i = native.Size(); i-- > 0;)
-        {
-            if (native[i] == hex)
-            {
-                native.Remove(i);
-                break;
-            }
-        }
-    }
-    state.appended.clear();
-}
-
-void AppendNativeHexes()
-{
-    H3Vector<INT32> &native = NativeHexes();
+    const bool gameDrewItsList = !combat->doNotDrawShade;
+    INT32 painted = 0;
     for (const INT32 hex : state.hexes)
     {
-        if (std::find(native.begin(), native.end(), hex) != native.end())
-            continue; // already shaded by the game or by an earlier call
-        native.Add(hex);
-        state.appended.push_back(hex);
+        if (gameDrewItsList && std::find(native.begin(), native.end(), hex) != native.end())
+            continue;
+        const H3CombatSquare &square = combat->squares[hex];
+        combat->CCellShdPcx->DrawToPcx16(0, 0, HEX_WIDTH, HEX_HEIGHT, combat->drawBuffer, square.left, square.top, TRUE);
+        ++painted;
     }
+    return painted;
+}
+
+void RebuildShadowLayer(H3CombatManager *combat)
+{
+    if (CanDraw(combat))
+        THISCALL_3(void, DRAW_GRID, combat, FALSE, TRUE); // HookDrawGrid adds our hexes
+}
+
+void Redraw(H3CombatManager *combat)
+{
+    if (!CanDraw(combat))
+        return;
+    RebuildShadowLayer(combat);
+    THISCALL_7(void, REDRAW_BATTLEFIELD, combat, TRUE, TRUE, FALSE, 0, TRUE, FALSE);
 }
 
 BOOL8 SetContour(H3CombatCreature *stack, BOOL8 on)
@@ -163,16 +160,14 @@ void ReapplyContours()
 void Forget()
 {
     state.hexes.clear();
-    state.appended.clear();
     state.contours.clear();
     state.anchorHex = -1;
 }
 
-// Removes our list entries and contours. Returns true when something had been shown.
+// Drops our hexes and contours. Returns true when something had been shown; the caller rebuilds the layer.
 bool Reset()
 {
     const bool hadState = HasState();
-    RemoveNativeHexes(); // the list is global, so this is valid outside the battle screen too
     if (ActiveCombat())
         for (H3CombatCreature *stack : state.contours)
             SetContour(stack, FALSE);
@@ -223,10 +218,8 @@ void AddHex(H3CombatManager *combat, INT32 hex, bool contour, bool &changed)
 
 void EndChange(H3CombatManager *combat, bool changed)
 {
-    if (!changed)
-        return;
-    AppendNativeHexes();
-    RequestRedraw(combat);
+    if (changed)
+        RequestRedraw(combat);
 }
 
 // !!FU(BattleShadow_Radius):P(hex)/(radius)/(contour);
@@ -271,6 +264,25 @@ void __stdcall OnClear(Era::TEvent *)
         RequestRedraw(combat);
 }
 
+// !!FU(BattleShadow_Debug):P?(version)/?(mine)/?(drawn)/?(listSize)/?(noShade)/?(option)/?(rebuilds)/?(anchor)/?(cursor);
+// x1 = plugin version (0 if this plugin did not answer), x2 = hexes this plugin wants to shade,
+// x3 = hexes it painted at the last layer rebuild, x4 = size of the game's own shadow list,
+// x5 = doNotDrawShade flag, x6 = "cursor shadow" game option, x7 = layer rebuilds (DrawGrid) in this battle,
+// x8 = hex the shadows belong to, x9 = hex under the cursor as the plugin sees it.
+void __stdcall OnDebug(Era::TEvent *)
+{
+    H3CombatManager *combat = ActiveCombat();
+    Era::x[1] = PLUGIN_VERSION;
+    Era::x[2] = INT32(state.hexes.size());
+    Era::x[3] = state.lastDrawn;
+    Era::x[4] = INT32(NativeHexes().Size());
+    Era::x[5] = combat ? INT32(combat->doNotDrawShade) : -1;
+    Era::x[6] = INT32(DwordAt(CURSOR_SHADOW_OPTION));
+    Era::x[7] = state.gridRebuilds;
+    Era::x[8] = state.anchorHex;
+    Era::x[9] = combat ? CursorHex(combat) : -1;
+}
+
 // ERA calls plugin handlers of a trigger before its ERM code: every !?MM0 starts from a clean state.
 void __stdcall OnBattleMouseHint(Era::TEvent *)
 {
@@ -308,33 +320,8 @@ void __stdcall OnBeforeBattleAction(Era::TEvent *)
     LeaveHint();
 }
 
-// !!FU(BattleShadow_Debug):P?(version)/?(mine)/?(inList)/?(listSize)/?(noShade)/?(option)/?(updates)/?(anchor)/?(cursor);
-// x1 = plugin version (0 if this plugin did not answer), x2 = hexes this plugin wants to shade,
-// x3 = how many of them are in the game's shadow list, x4 = size of that list, x5 = doNotDrawShade flag,
-// x6 = "cursor shadow" game option, x7 = native shadow-list rebuilds in this battle,
-// x8 = hex the shadows belong to, x9 = hex under the cursor as the plugin sees it.
-void __stdcall OnDebug(Era::TEvent *)
-{
-    H3Vector<INT32> &native = NativeHexes();
-    INT32 inList = 0;
-    for (const INT32 hex : state.hexes)
-        if (std::find(native.begin(), native.end(), hex) != native.end())
-            ++inList;
-    H3CombatManager *combat = ActiveCombat();
-    Era::x[1] = PLUGIN_VERSION;
-    Era::x[2] = INT32(state.hexes.size());
-    Era::x[3] = inList;
-    Era::x[4] = INT32(native.Size());
-    Era::x[5] = combat ? INT32(combat->doNotDrawShade) : -1;
-    Era::x[6] = INT32(DwordAt(CURSOR_SHADOW_OPTION));
-    Era::x[7] = state.nativeUpdates;
-    Era::x[8] = state.anchorHex;
-    Era::x[9] = combat ? CursorHex(combat) : -1;
-}
-
 void __stdcall OnLeaveBattleContext(Era::TEvent *)
 {
-    RemoveNativeHexes();
     Forget();
     LeaveHint();
 }
@@ -342,52 +329,48 @@ void __stdcall OnLeaveBattleContext(Era::TEvent *)
 void __stdcall OnBattleStart(Era::TEvent *event)
 {
     OnLeaveBattleContext(event);
-    state.nativeUpdates = 0;
+    state.gridRebuilds = 0;
+    state.lastDrawn = 0;
     INT32 quitId = 0;
     if (Era::AllocErmFunc)
         Era::AllocErmFunc(MOUSE_HINT_QUIT_EVENT, quitId); // lets ERA fire _Quit from the first hint
 }
 
-// The game rebuilt its shadow list. Keep ours only while the cursor is still on the hex they belong to;
-// otherwise the mouse moved without !?MM0 (for example while choosing a spell target).
-void RestoreAfterNativeUpdate(H3CombatManager *combat)
+int __stdcall HookDrawGrid(HiHook *hook, H3CombatManager *combat, INT32 arg1, INT32 arg2)
 {
-    if (combat && combat->dlg && CursorHex(combat) == state.anchorHex)
+    const int result = THISCALL_3(int, hook->GetDefaultFunc(), combat, arg1, arg2);
+    ++state.gridRebuilds;
+    state.lastDrawn = HasState() && CanDraw(combat) ? PaintOwnShadows(combat) : 0;
+    return result;
+}
+
+// The game updated its own cursor shadow. Keep ours only while the cursor is still on the hex they belong to;
+// otherwise the mouse moved without !?MM0 (for example while choosing a spell target).
+void AfterNativeShadowUpdate(H3CombatManager *combat)
+{
+    if (!HasState() || !combat || !combat->dlg)
+        return;
+    if (CursorHex(combat) == state.anchorHex)
     {
-        AppendNativeHexes();
         ReapplyContours();
-        RebuildShadowLayer(combat); // the game rebuilt the layer without our hexes
+        return;
     }
-    else
-        Reset();
+    Reset();
+    RebuildShadowLayer(combat);
 }
 
 int __stdcall HookSetCursorShadow(HiHook *hook, H3CombatManager *combat, INT32 hex, INT32 flag)
 {
-    ++state.nativeUpdates;
-    if (!HasState())
-        return THISCALL_3(int, hook->GetDefaultFunc(), combat, hex, flag);
-    RemoveNativeHexes();
     const int result = THISCALL_3(int, hook->GetDefaultFunc(), combat, hex, flag);
-    RestoreAfterNativeUpdate(combat);
+    AfterNativeShadowUpdate(combat);
     return result;
 }
 
 int __stdcall HookSetAreaShadow(HiHook *hook, H3CombatManager *combat, INT32 hex, H3Vector<INT32> *hexes, INT32 flag)
 {
-    ++state.nativeUpdates;
-    if (!HasState())
-        return THISCALL_4(int, hook->GetDefaultFunc(), combat, hex, hexes, flag);
-    RemoveNativeHexes();
     const int result = THISCALL_4(int, hook->GetDefaultFunc(), combat, hex, hexes, flag);
-    RestoreAfterNativeUpdate(combat);
+    AfterNativeShadowUpdate(combat);
     return result;
-}
-
-int __stdcall HookClearShadows(HiHook *hook)
-{
-    RemoveNativeHexes(); // the requested state stays; the next native update may restore it
-    return CDECL_0(int, hook->GetDefaultFunc());
 }
 } // namespace
 
@@ -413,8 +396,8 @@ void InstallHooks(PatcherInstance *patcher)
         return;
     installed = true;
     // Splice the function entries explicitly: these are callees, not call sites.
+    patcher->WriteHiHook(DRAW_GRID, SPLICE_, THISCALL_, HookDrawGrid);
     patcher->WriteHiHook(SET_CURSOR_SHADOW, SPLICE_, THISCALL_, HookSetCursorShadow);
     patcher->WriteHiHook(SET_AREA_SHADOW, SPLICE_, THISCALL_, HookSetAreaShadow);
-    patcher->WriteHiHook(CLEAR_SHADOWS, SPLICE_, CDECL_, HookClearShadows);
 }
 }
