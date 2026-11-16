@@ -90,3 +90,26 @@ jobs:
           name: battle_shadows
           path: package/battle_shadows/
           if-no-files-found: error
+
+      # 행동 전환 + 범위 사격 플러그인(데몬 최신판, 타이푼 연동): 실패해도 위 결과물은 이미 올라가 있도록 맨 끝에 둠
+      - name: Build SwitchingCreatureAction (x86 Release)
+        shell: cmd
+        run: msbuild Combat_SwitchingCreatureAction\Combat_SwitchingCreatureAction.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:OutDir=%GITHUB_WORKSPACE%\out\area_shot\ /v:minimal
+
+      - name: Package SwitchingCreatureAction (mod folder layout)
+        shell: cmd
+        run: |
+          mkdir "%GITHUB_WORKSPACE%\package\area_shot\EraPlugins"
+          mkdir "%GITHUB_WORKSPACE%\package\area_shot\Data"
+          mkdir "%GITHUB_WORKSPACE%\package\area_shot\Lang"
+          for %%f in ("%GITHUB_WORKSPACE%\out\area_shot\*.era" "%GITHUB_WORKSPACE%\out\area_shot\*.dll") do copy /y "%%f" "%GITHUB_WORKSPACE%\package\area_shot\EraPlugins\"
+          copy /y "Combat_SwitchingCreatureAction\Data\*.def" "%GITHUB_WORKSPACE%\package\area_shot\Data\"
+          copy /y "Combat_SwitchingCreatureAction\Lang\combat_switching_actions.json" "%GITHUB_WORKSPACE%\package\area_shot\Lang\"
+          copy /y "Combat_SwitchingCreatureAction\README_KO.md" "%GITHUB_WORKSPACE%\package\area_shot\"
+          dir /s /b "%GITHUB_WORKSPACE%\package\area_shot"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: area_shot
+          path: package/area_shot/
+          if-no-files-found: error
