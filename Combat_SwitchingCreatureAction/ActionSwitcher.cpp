@@ -12,9 +12,15 @@ constexpr int kButtonY = 4;
 constexpr int kButtonWidth = 44;
 constexpr int kButtonHeight = 36;
 constexpr int kOptionSpacing = 47;
+// Width of the moved stock buttons. The bar uses a 47 px pitch; 46 px lets replacement art up to
+// that width (such as 46 px H2-style buttons) draw and click in full. The supplied 44 px art is unaffected.
+constexpr int kStockButtonWidth = 46;
 constexpr int kMenuHeight = 54;
 constexpr LPCSTR kButtonDef = "icmAltq.def";
 INT actionDepth = 0;
+// Width actually used for the switch buttons: the stock DEF is 44 px, a replacement such as the
+// H2-style one is 46 px. Kept within the 47 px spacing of the bottom bar.
+int buttonWidth = kButtonWidth;
 
 const char *ActionText(eAction action, bool rightClick)
 {
@@ -129,6 +135,11 @@ SwitcherDlgPanel::SwitcherDlgPanel(H3CombatBottomPanel *panel, const int firstIt
         return;
     actionSwitchButton->AddHotkey(static_cast<INT>(eVKey::H3VK_ALT));
     AddAreaShotFrames(actionSwitchButton->GetDef());
+    // Draw and click the whole frame when the DEF is wider than the stock 44 px.
+    buttonWidth = kButtonWidth;
+    if (H3LoadedDef *def = actionSwitchButton->GetDef())
+        buttonWidth = (std::max)(kButtonWidth, (std::min)(static_cast<int>(def->widthDEF), kOptionSpacing - 1));
+    actionSwitchButton->SetWidth(static_cast<UINT16>(buttonWidth));
     panel->AddItem(actionSwitchButton);
 
     background = H3DlgPcx16::Create(0, -kMenuHeight, 1, kMenuHeight, firstItemId + 1, nullptr);
@@ -138,10 +149,10 @@ SwitcherDlgPanel::SwitcherDlgPanel(H3CombatBottomPanel *panel, const int firstIt
     switchItems.reserve(MAX_ACTIONS);
     for (int i = 0; i < MAX_ACTIONS; ++i)
     {
-        auto button = H3DlgCustomButton::Create(0, 0, kButtonWidth, kButtonHeight,
+        auto button = H3DlgCustomButton::Create(0, 0, buttonWidth, kButtonHeight,
             firstItemId + 2 + i, kButtonDef, SwitchPanelButtonProcedure, 0, 1);
         const char number[] = {static_cast<char>('1' + i), '\0'};
-        auto label = H3DlgText::Create(0, 0, kButtonWidth, 12, number, NH3Dlg::Text::SMALL,
+        auto label = H3DlgText::Create(0, 0, buttonWidth, 12, number, NH3Dlg::Text::SMALL,
             eTextColor::REGULAR, firstItemId + 2 + MAX_ACTIONS + i, eTextAlignment::MIDDLE_CENTER);
         if (button)
             panel->AddItem(button);
@@ -327,7 +338,7 @@ void SwitcherDlgPanel::UpdateLayout()
 {
     if (!background || !actionSwitchButton || creatureActions.size() < 2)
         return;
-    const int width = static_cast<int>(creatureActions.size()) * kOptionSpacing - 3 + 8;
+    const int width = static_cast<int>(creatureActions.size()) * kOptionSpacing - (kOptionSpacing - buttonWidth) + 8;
     if (width != menuWidth)
     {
         H3LoadedPcx16 *pcx = H3LoadedPcx16::Create(width, kMenuHeight);
@@ -343,7 +354,7 @@ void SwitcherDlgPanel::UpdateLayout()
             background->SetWidth(width);
         }
     }
-    const int left = actionSwitchButton->GetX() + kButtonWidth - width;
+    const int left = actionSwitchButton->GetX() + buttonWidth - width;
     const int top = actionSwitchButton->GetY() - kButtonY - kMenuHeight;
     background->SetX(left);
     background->SetY(top);
@@ -874,15 +885,18 @@ INT __stdcall ActionSwitcher::Y_GetCursorAction(HiHook *h, H3CombatManager *mana
         return 0;
     // Native cursor values: 1 walk, 2 fly, 3/15 shoot, 7 melee, 20 creature spell.
     // Preserve native reachability, direction, target and command parameters.
-    if (action == eAction::MOVE && cursor != 1 && cursor != 2 && cursor != 22)
+    const bool movement = cursor == 1 || cursor == 2 || cursor == 22;
+    if (action == eAction::MOVE && !movement)
         return 0;
-    if (action == eAction::SHOOT && cursor != 3 && cursor != 15)
+    // Shooting mode keeps the stock shooter behaviour: shoot at enemies and walk to empty hexes.
+    // Previously walking was refused here, so a shooter that switched melee -> shoot (or came back
+    // from the area-shot picker) could no longer move until the battle ended.
+    if (action == eAction::SHOOT && cursor != 3 && cursor != 15 && !movement)
         return 0;
     if (action == eAction::CAST && cursor != 20)
     {
         // Casting on living creatures does not compete with walking on an empty
         // hex. Keep the explicit CAST/MOVE choice only for reachable corpse casts.
-        const bool movement = cursor == 1 || cursor == 2 || cursor == 22;
         if (!movement || instance->switcherDlgPanel->actionOptions.castHex)
             return 0;
     }
@@ -921,20 +935,21 @@ void ActionSwitcher::CreatePatches() noexcept
     interfaceChangePatches.reserve(32);
 
     // Move and resize the stock combat controls to make room for the action selector.
+    // All buttons move to a 47 px pitch, so the art is loaded from narrower "q" copies of the stock DEFs.
     interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B3D9 + 1, 4));
-    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B3D3 + 1, 44));
+    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B3D3 + 1, kStockButtonWidth));
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B3C9 + 1, (int)"icm003q.def"));
 
     interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B2CF + 1, 51));
-    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B2CB + 1, 44));
+    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B2CB + 1, kStockButtonWidth));
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B2BF + 1, (int)"icm001q.def"));
 
     interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B354 + 1, 98));
-    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B34E + 1, 44));
+    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B34E + 1, kStockButtonWidth));
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B344 + 1, (int)"icm002q.def"));
 
     interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B45E + 1, 145));
-    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B458 + 1, 44));
+    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B458 + 1, kStockButtonWidth));
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B44E + 1, (int)"icm004q.def"));
 
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46BC1F + 1, 192));
@@ -949,15 +964,15 @@ void ActionSwitcher::CreatePatches() noexcept
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B917 + 1, 590));
 
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B4E6 + 1, 611));
-    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B4E0 + 1, 44));
+    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B4E0 + 1, kStockButtonWidth));
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B4D6 + 1, (int)"icm005q.def"));
 
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B56E + 1, 705));
-    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B568 + 1, 44));
+    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B568 + 1, kStockButtonWidth));
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B55E + 1, (int)"icm006q.def"));
 
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B5F6 + 1, 752));
-    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B5F0 + 1, 44));
+    interfaceChangePatches.emplace_back(_PI->WriteByte(0x46B5F0 + 1, kStockButtonWidth));
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x46B5E6 + 1, (int)"icm007q.def"));
 
     interfaceChangePatches.emplace_back(_PI->WriteDword(0x471ED9 + 1, 195));

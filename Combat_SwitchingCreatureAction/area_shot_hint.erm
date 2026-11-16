@@ -1,0 +1,97 @@
+ZVSE2
+
+✔ 범위 사격 겨냥 힌트 ─────────────────────────────────────────────────────────────────────────────
+Combat_SwitchingCreatureAction 플러그인의 겨냥 창(ALT·G)에서 마우스가 다른 칸으로 옮겨갈 때마다 불린다.
+겨냥 창이 열려 있는 동안에는 전투의 MM0(OnBattleMouseHint)가 돌지 않으므로 그 대신 쓰는 함수다.
+ x1= 쏘는 부대     x2= 마우스 헥스     x3= 그 칸의 부대(-1= 빈 칸)     x4= 쏠 수 있는 칸이면 1
+ x5= 종류(1 화염, 2 죽음의 구름, 3 물리)     x6= 쏘는 부대와의 거리     x7= 꺾인 화살(피해 절반)이면 1
+문구를 SN:W^aimedShotHint^ 에 넣으면 플러그인 기본 문구 대신 그 문구가 하단바에 나온다.
+아무것도 넣지 않으면 플러그인 기본 문구가 나온다.
+ · 빈 칸, 아군 칸 : 예전 범위 사격 MM0 코드의 "마우스 안내" 부분 (y1→x1 쏘는 부대, y2→x3 목표 부대)
+ · 적군 칸        : 평소 MM0 적군 힌트와 같은 함수(StackDamageHint_Build)로 만든 문구
+
+!?FU(OnAreaShotHint);
+!!FU&x4=0:E;                                    쏠 수 없는 칸이면 기본 문구
+!!BMx1:T?y2 I?y13;                              y2= 쏘는 부대 종류, y13= 쏘는 편
+
+* 빈 칸: 예전 코드의 종류별 안내 문구 (45·166번처럼 문구가 없는 부대는 기본 문구)
+!!if&x3=-1;
+  !!VRz-1:S^^;
+  !!VRz-1|y2=21:Sz202819; !!VRz-1|y2=64/y2=65:Sz202818;
+  !!SN:W^aimedShotHint^/z-1;
+  !!FU:E;
+!!en;
+
+!!BMx3:N?y21 T?y22 I?y23 R?y41 H?y42 L?y43; !!UN:N3/z-2/y22/0;
+
+* 적군: 평소 MM0 적군 힌트와 같은 문구 (만들지 못하면 기본 문구)
+!!if&y23<>y13;
+  !!FU(StackDamageHint_Build):Px2/?y1;
+  !!if&y1=1; !!SN:W^StackDamageHint^/?z-1; !!SN:W^aimedShotHint^/z-1; !!en;
+  !!FU:E;
+!!en;
+
+* 아군에게 겨냥할 경우 데미지 계산 (예전 코드 그대로)
+!!FU239:Px1/x3/1/?y3;
+!!FU238:Px1/x3/1/?y4/?y5;
+!!VRy51:Sy4+y43; !!VRy52:Sy51:y42; !!VRy52&y52>y21:Sy21; y52= 최소 살해 수
+!!VRy53:Sy5+y43; !!VRy54:Sy53:y42; !!VRy54&y54>y21:Sy21; y54= 최대 살해 수
+!!VRz-6&y4<>y5:S^%Y4-%Y5^;     !!VRz-6&y4=y5:S^%Y4^;
+!!VRz-5&y52<>y54:S^%Y52-%Y54^; !!VRz-5|y52=y54:S^%Y52^;
+!!BMx1:G41/?y30/d G42/?y31/d;
+!!if|y30>0/y31>0;
+  !!VRy51:Sy3+y43; !!VRy52:Sy51:y42; !!VRy52&y52>y21:Sy21; y52= 예상 살해 수
+  !!VRz-6:S^%Y3^;  !!VRz-5:S^%Y52^;
+!!en;
+!!VRz-1:Sz202823;
+!!SN:W^aimedShotHint^/z-1;
+
+
+✔ 부대 대 부대 피해 힌트 만들기 ───────────────────────────────────────────────────────────────────
+평소 MM0 "마우스 안내"(적군 힌트) 코드를 함수로 옮긴 것이다. 바꾼 곳은 세 군데뿐이다.
+ 1) 마우스 헥스를 MM:D 대신 x1 로 받는다 (y39 = x1).
+ 2) 마지막의 MM:M 대신 문구를 SN:W^StackDamageHint^ 에 넣는다.
+ 3) 문구를 만들었으면 x2= 1 을 돌려준다.
+v11~v15 와 ^StackToStackDamage^ 는 OnStackToStackDamage 에서 채운 값이다.
+겨냥 창도 적군 칸에서는 게임의 피해 예상 계산을 하므로 그 값이 이 칸의 것으로 새로 채워진다(사격, x7=1, x9=1).
+
+!?FU(StackDamageHint_Build);
+!!VRx2:S0; !!VRy39:Sx1;
+!!if&v14>=0/v14<=40/v14<>20/v15>=0/v15<=40/v15<>20;
+!!FU|y39<0/y39>186:E; !!BU:Ey39/?y20; !!FU&y20<>v15:E;
+!!SN:W^StackToStackDamage^/?y1; !!FU&y1=0:E;
+!!VRy7:Sv13+1; !!BG:Q?y3;
+!!BMv14:A?y51 N?y11 T?y12 F?y13 U3/?y15 G41/?y18/d G42/?y19/d;
+  !!VRy13&y13<0:+2147483648; !!VRy14:Sy13%131072;
+!!BMv15:D?y52 N?y21 T?y22 R?y23 U3/?y25 H?y26 L?y27; !!FU&y26<=0:E;
+
+!!VRy31:Sv11+y27; !!VRy32:Sy31:y26; !!VRy32&y32>y21:Sy21; y32= 최소 살해 수
+!!VRy33:Sv12+y27; !!VRy34:Sy33:y26; !!VRy34&y34>y21:Sy21; y34= 최대 살해 수
+데미지 안내 !!VRz-6&v12<>v11:S^%V11-%V12^; !!VRz-6|y18>0/v11=v12:S^%V12^; !!VRz-6|y19>0:S^%V11^;
+살해수 안내 !!VRz-3&y32<>y34:S^%Y32-%Y34^; !!VRz-3|y18>0/y32=y34:S^%Y34^; !!VRz-3|y19>0:S^%Y32^;
+
+!!UN:N3/z-1/y12/0; y14 유닛의 singular 이름을 z-1에 저장
+!!UN:N3/z-2/y22/0; y22 유닛의 singular 이름을 z-2에 저장
+
+!!if&y7=1; 근접 공격의 경우
+!!SN:W^%Y12 Monster's has Strike and Return^/?y100; !!SN:W^Stack Strike and do not Return^/?y99;
+!!VRz-10:S^^;
+!!VRz-10&y100=1/i^StrikeReturn^=20:Sz202044; "공격 후 복귀"
+!!VRz-10&y100=1/i^StrikeReturn^=17:Sz202045; "공격 후 복귀하지 않음"
+
+!!VRz-4:Sz201996; !!VRz-4&y23>0/y14<65536:Sz201997; z-4= "반격 당할 수 있음"
+!!VRz-5:Sz201998;
+!!en;
+
+!!if&y7=2; 사격 공격의 경우
+!!VRz-4:S^^; !!VRz-4&y22=75:Sz201997; 악마의 눈(75)의 경우 반격 사격 !!VRz-4&y25<=0:S^^;
+!!VRz-5&y7=2:Sz201999;
+!!SN:W^IceRing Mon 1^/?y-1; !!SN:W^IceRing Mon 2^/?y-2; !!SN:W^IceRing Mon 3^/?y-3;
+  !!if|y12=y-1/y12=y-2/y12=y-3; 얼음고리 능력자의 경우
+  !!VRy-4:S1-y3*21; !!VRy-5:Sy-4+20;
+  !!DO(Check_the_Expected_Damage_about_IceRing)/y-4/y-5/1:Pv14/y39/0/0/?y5/0/?y-8/0/?y-10;
+  !!VRz-5:Sz202043; !!en;
+!!en;
+
+!!SN:W^StackDamageHint^/z-5; !!VRx2:S1;
+!!en;

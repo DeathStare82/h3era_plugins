@@ -437,6 +437,71 @@ int AreaShotDlg_CanCastAtHex(int hex_ix)
     return 0;
 }
 
+// ---------------------------------------------------------------------------------------------
+// ERM hint hook for the target picker (added in this fork).
+// While the picker is open the battle's own OnBattleMouseHint (MM0) trigger does not run, so a
+// mod's custom hints never appear there. Each hover fires !?FU(OnAreaShotHint) instead:
+//   x1 shooter stack (0..41)      x2 hovered hex (0..186)       x3 stack on that hex, -1 = none
+//   x4 1 = can shoot there        x5 type: 1 fire, 2 death cloud, 3 physical
+//   x6 hex distance from shooter  x7 1 = half damage (long range or wall: broken arrow cursor)
+// The script replaces the hint with !!SN:W^aimedShotHint^/^text^; or !!SN:W^aimedShotHint^/z33;
+// Leaving it empty keeps the plugin's own hint. The variable is cleared when the hovered hex changes,
+// before the damage estimate, so OnStackToStackDamage (x9 = 1, estimate) may set it as well.
+// ---------------------------------------------------------------------------------------------
+constexpr LPCSTR ERM_HINT_EVENT = "OnAreaShotHint";
+constexpr LPCSTR ERM_HINT_VAR = "aimedShotHint";
+constexpr size_t HINT_TEXT_LIMIT = 511;
+
+void ResetErmHint()
+{
+    if (Era::SetAssocVarStrValue)
+        Era::SetAssocVarStrValue(ERM_HINT_VAR, "");
+}
+
+void ApplyErmHint(int hex, H3CombatCreature *target, bool canShoot, bool halfDamage)
+{
+    if (!AreaShotDlg_Attacker || !Era::AllocErmFunc || !Era::FireErmEvent || !Era::GetArgXVars ||
+        !Era::GetRetXVars || !Era::GetAssocVarStrValue || !Era::SetAssocVarStrValue)
+        return;
+    int eventId = 0;
+    Era::AllocErmFunc(ERM_HINT_EVENT, eventId);
+    Era::TXVars *argumentVars = Era::GetArgXVars();
+    Era::TXVars *resultVars = Era::GetRetXVars();
+    if (!eventId || !argumentVars || !resultVars)
+        return;
+
+    // ERM commands may use the game's text buffer, so keep the default hint aside.
+    char defaultHint[HINT_TEXT_LIMIT + 1];
+    strncpy(defaultHint, h3_TextBuffer, HINT_TEXT_LIMIT);
+    defaultHint[HINT_TEXT_LIMIT] = '\0';
+
+    auto arguments = *argumentVars;
+    auto results = *resultVars;
+    std::array<INT, 16> savedArguments;
+    std::array<INT, 16> savedResults;
+    std::copy(arguments, arguments + 16, savedArguments.begin());
+    std::copy(results, results + 16, savedResults.begin());
+    std::fill(arguments, arguments + 16, 0);
+    arguments[0] = AreaShotDlg_Attacker->Index();
+    arguments[1] = hex;
+    arguments[2] = target ? target->Index() : -1;
+    arguments[3] = canShoot ? 1 : 0;
+    arguments[4] = static_cast<INT>(GetAreaShotType(AreaShotDlg_Attacker));
+    arguments[5] = hex >= 0 && hex < 187 ? HexesDist(AreaShotDlg_Attacker->position, hex) : -1;
+    arguments[6] = halfDamage ? 1 : 0;
+    Era::FireErmEvent(eventId);
+    std::copy(savedArguments.begin(), savedArguments.end(), arguments);
+    std::copy(savedResults.begin(), savedResults.end(), results);
+
+    Era::era_str text = Era::GetAssocVarStrValue(ERM_HINT_VAR);
+    const bool replaced = text && text[0];
+    strncpy(h3_TextBuffer, replaced ? text : defaultHint, HINT_TEXT_LIMIT);
+    h3_TextBuffer[HINT_TEXT_LIMIT] = '\0';
+    if (text && Era::MemFree)
+        Era::MemFree(text);
+    Era::SetAssocVarStrValue(ERM_HINT_VAR, "");
+}
+
 // Выбора гекса при выборе цели для площадного выстрела.
 int AreaShotDlg_SelectHex(int hex_ix, bool updateHint)
 {
@@ -455,6 +520,7 @@ int AreaShotDlg_SelectHex(int hex_ix, bool updateHint)
     // Leaving the battlefield clears its footprint without replacing UI hints.
     if (updateHint)
     {
+        ResetErmHint();
         // Можно колдовать сюда.
         if (AreaShotDlg_CanCastAtHex(hex_ix))
         {
@@ -511,24 +577,20 @@ int AreaShotDlg_SelectHex(int hex_ix, bool updateHint)
             {
                 char *tar_name = GetCreatureName(tar_stack->type, tar_stack->numberAlive);
 
+                // Damage estimate for this target. This fork runs it even with the extra-info option off:
+                // like the battle's own hint, it fires OnStackToStackDamage (x7 = 1 ranged, x9 = 1 estimate),
+                // so ERM hint systems built on that trigger get fresh values for the picker too.
+                bool shoot = true;
+                H3String str;
+                // Дистанция между стрелком и целью.
+                int distance = HexesDist(AreaShotDlg_Attacker->position, tar_stack->position);
+                // Получаем лог-строку про урон
+                H3String *logDmg =
+                    FASTCALL_5(H3String *, 0x492F50, &str, AreaShotDlg_Attacker, tar_stack, shoot, distance);
+
                 // Включена доп. информация.
                 if (DwordAt(0x698818))
                 {
-                    bool shoot = true;
-                    //// Для джагернаутов - не стрельба (для лога)
-                    // if (shooterType == 182 || shooterType == 183)
-                    //{
-                    //     shoot = false;
-                    // }
-
-                    // Получаем урон.
-                    H3String str;
-                    //_HStringF_ str;
-                    // Дистанция между стрелком и целью.
-                    int distance = HexesDist(AreaShotDlg_Attacker->position, tar_stack->position);
-                    // Получаем лог-строку про урон
-                    H3String *logDmg =
-                        FASTCALL_5(H3String *, 0x492F50, &str, AreaShotDlg_Attacker, tar_stack, shoot, distance);
                     // Получаем текст лога.
                     const char *desc =
                         ReadTextOrDefault(DESC_ON_TARGET_FORMAT_NAME_JSON_KEY_FORMAT, "%s: %d shots, damage %s");
@@ -562,6 +624,13 @@ int AreaShotDlg_SelectHex(int hex_ix, bool updateHint)
                 }
             }
 
+            // Let ERM replace the hint (OnAreaShotHint), then show it.
+            const bool halfDamage =
+                THISCALL_4(bool, 0x4670F0, P_CombatManager->Get(), AreaShotDlg_Attacker, AreaShotDlg_Attacker->position,
+                           hex_ix) ||
+                (tar_stack && THISCALL_3(bool, 0x4671E0, P_CombatManager->Get(), AreaShotDlg_Attacker, tar_stack));
+            ApplyErmHint(hex_ix, tar_stack, true, halfDamage);
+
             // Отправляем сообщение в лог.
             THISCALL_4(void, 0x4729D0, P_CombatManager->dlg, h3_TextBuffer, 0, true);
         }
@@ -585,6 +654,9 @@ int AreaShotDlg_SelectHex(int hex_ix, bool updateHint)
             //     strcpy(h3_TextBuffer, misk_text[15]);
             // }
 
+            H3CombatCreature *hovered =
+                hex_ix >= 0 && hex_ix < 187 ? P_CombatManager->squares[hex_ix].GetCreature() : nullptr;
+            ApplyErmHint(hex_ix, hovered, false, false);
             THISCALL_4(void, 0x4729D0, P_CombatManager->dlg, h3_TextBuffer, 0, true);
 
             // Результирующий гекс - пустой.
