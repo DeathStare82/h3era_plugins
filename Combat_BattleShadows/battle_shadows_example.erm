@@ -1,23 +1,27 @@
 ZVSE2
 
-; Combat_BattleShadows example. Put this file into the Data\s folder of your mod.
+; Combat_BattleShadows example. Put this file into the Data\s folder of your mod. See README.md.
 
-; Example 1 (on): a shadow that follows the mouse by itself, as fast as the Fireball shadow.
+; Example 1 (on): a radius 1 shadow that follows the mouse by itself, with blinking outlines.
 ;   P(radius)/(contour): radius 0..4 (0 = only the mouse hex), -1 = off; contour 1 = blinking blue outline.
-;   It stays on until switched off with -1 or until the next battle action, so calling it on every hint is fine.
+;   It stays on until switched off or until the next battle action, so calling it on every hint is fine.
 !?MM0;
 !!FU(BattleShadow_Follow):P1/1;
 
-; Example 2 (off): a shape built from the hint position. Removed by the plugin when the next MM0 starts.
-; To turn it on, replace the first character * with ! on the next three lines.
+; Example 2 (off): leave stacks out of the shadow. Here: every stack of side 1 (stacks 21..41).
+; To turn it on, replace the first character * with ! on the next lines.
 *?MM0;
-*!MM:D?(hex:y);
-*!FU(BattleShadow_Radius):P(hex)/1/1;
+*!re i/21/41;
+*!BMi:N?y30;
+*!co&y30<=0;
+*!BMi:P?y32;
+*!FU(BattleShadow_SkipStacks):Py32;
+*!en;
 
-; Example 3 (off): free shape, up to 10 hexes. -1 = empty slot. The 11th value is the contour switch.
+; Example 3 (off): whole stacks, for chain spells. Two target stacks given by one of their hexes.
 *?MM0;
-*!FU(BattleShadow_Hexes):P52/53/54/71/-1/-1/-1/-1/-1/-1/1;
+*!FU(BattleShadow_Stacks):P52/120/-1/-1/-1/-1/-1/-1/-1/-1/1;
 
 ; Diagnostics (off): shows the plugin state in the battle hint line instead of the normal hint.
 *!FU(BattleShadow_Debug):P?y20/?y21/?y22/?y23/?y24/?y25/?y26/?y27/?y28;
-*!MM:M^v%y20 painted=%y21 hint=%y22 follow=%y23 noShade=%y24 option=%y25 repaints=%y26 anchor=%y27 cursor=%y28^;
+*!MM:M^v%y20 shown=%y21 hint=%y22 follow=%y23 skip=%y24 paints=%y25 fast=%y26 full=%y27 cursor=%y28^;
