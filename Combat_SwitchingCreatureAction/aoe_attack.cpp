@@ -458,16 +458,13 @@ void ResetErmHint()
         Era::SetAssocVarStrValue(ERM_HINT_VAR, "");
 }
 
+// ERA 3.9.11 and older do not give plugins AllocErmFunc (3.9.12+) and CreatePlugin (3.9.16+), so the
+// function is not looked up that way. Since 2017 ERA stores the ID of every named ERM function in a
+// named variable of the same name, and ExecErmCmd exists in every ERA 3.7+, so the function is found by
+// that variable and called with FU<id>:P..., which works on old and new ERA alike.
 void ApplyErmHint(int hex, H3CombatCreature *target, bool canShoot, bool halfDamage)
 {
-    if (!AreaShotDlg_Attacker || !Era::AllocErmFunc || !Era::FireErmEvent || !Era::GetArgXVars ||
-        !Era::GetRetXVars || !Era::GetAssocVarStrValue || !Era::SetAssocVarStrValue)
-        return;
-    int eventId = 0;
-    Era::AllocErmFunc(ERM_HINT_EVENT, eventId);
-    Era::TXVars *argumentVars = Era::GetArgXVars();
-    Era::TXVars *resultVars = Era::GetRetXVars();
-    if (!eventId || !argumentVars || !resultVars)
+    if (!AreaShotDlg_Attacker || !Era::ExecErmCmd || !Era::GetAssocVarIntValue || !Era::GetAssocVarStrValue)
         return;
 
     // ERM commands may use the game's text buffer, so keep the default hint aside.
@@ -475,23 +472,16 @@ void ApplyErmHint(int hex, H3CombatCreature *target, bool canShoot, bool halfDam
     strncpy(defaultHint, h3_TextBuffer, HINT_TEXT_LIMIT);
     defaultHint[HINT_TEXT_LIMIT] = '\0';
 
-    auto arguments = *argumentVars;
-    auto results = *resultVars;
-    std::array<INT, 16> savedArguments;
-    std::array<INT, 16> savedResults;
-    std::copy(arguments, arguments + 16, savedArguments.begin());
-    std::copy(results, results + 16, savedResults.begin());
-    std::fill(arguments, arguments + 16, 0);
-    arguments[0] = AreaShotDlg_Attacker->Index();
-    arguments[1] = hex;
-    arguments[2] = target ? target->Index() : -1;
-    arguments[3] = canShoot ? 1 : 0;
-    arguments[4] = static_cast<INT>(GetAreaShotType(AreaShotDlg_Attacker));
-    arguments[5] = hex >= 0 && hex < 187 ? HexesDist(AreaShotDlg_Attacker->position, hex) : -1;
-    arguments[6] = halfDamage ? 1 : 0;
-    Era::FireErmEvent(eventId);
-    std::copy(savedArguments.begin(), savedArguments.end(), arguments);
-    std::copy(savedResults.begin(), savedResults.end(), results);
+    const int funcId = Era::GetAssocVarIntValue(ERM_HINT_EVENT);
+    if (funcId > 0)
+    {
+        const int distance = hex >= 0 && hex < 187 ? HexesDist(AreaShotDlg_Attacker->position, hex) : -1;
+        char command[160];
+        sprintf(command, "FU%d:P%d/%d/%d/%d/%d/%d/%d;", funcId, AreaShotDlg_Attacker->Index(), hex,
+                target ? target->Index() : -1, canShoot ? 1 : 0,
+                static_cast<INT>(GetAreaShotType(AreaShotDlg_Attacker)), distance, halfDamage ? 1 : 0);
+        Era::ExecErmCmd(command);
+    }
 
     Era::era_str text = Era::GetAssocVarStrValue(ERM_HINT_VAR);
     const bool replaced = text && text[0];
@@ -499,7 +489,8 @@ void ApplyErmHint(int hex, H3CombatCreature *target, bool canShoot, bool halfDam
     h3_TextBuffer[HINT_TEXT_LIMIT] = '\0';
     if (text && Era::MemFree)
         Era::MemFree(text);
-    Era::SetAssocVarStrValue(ERM_HINT_VAR, "");
+    if (Era::SetAssocVarStrValue)
+        Era::SetAssocVarStrValue(ERM_HINT_VAR, "");
 }
 
 // Выбора гекса при выборе цели для площадного выстрела.
