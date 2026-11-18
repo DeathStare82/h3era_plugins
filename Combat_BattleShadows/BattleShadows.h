@@ -13,7 +13,8 @@ namespace battle_shadows
 //   !!FU(BattleShadow_Clear):P;
 //   !!FU(BattleShadow_Debug):P?(version)/...                            diagnostics, see README.md
 // Radius/Hexes/Stacks/SkipStacks are dropped before every !?MM0 (OnBattleMouseHint); everything, follow mode
-// included, is dropped before every battle action.
+// included, is dropped before every battle action. The shadows are drawn by the game's cursor shadow function
+// (0x493A20), together with the hex under the mouse, once per combat screen message.
 void RegisterEvents();
 void InstallHooks(PatcherInstance *patcher);
 }

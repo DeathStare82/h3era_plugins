@@ -1,6 +1,8 @@
 ZVSE2
 
-; Combat_BattleShadows example. Put this file into the Data\s folder of your mod. See README.md.
+; Combat_BattleShadows (v7) example. Put this file into the Data\s folder of your mod. See README.md.
+; Shadows are drawn by the game's own cursor shadow function, exactly like Fireball aiming. They need the game's
+; "cursor shadow" combat option, like Fireball's area does.
 
 ; Example 1 (on): a radius 1 shadow that follows the mouse by itself, with blinking outlines.
 ;   P(radius)/(contour): radius 0..4 (0 = only the mouse hex), -1 = off; contour 1 = blinking blue outline.
@@ -23,5 +25,5 @@ ZVSE2
 *!FU(BattleShadow_Stacks):P52/120/-1/-1/-1/-1/-1/-1/-1/-1/1;
 
 ; Diagnostics (off): shows the plugin state in the battle hint line instead of the normal hint.
-*!FU(BattleShadow_Debug):P?y20/?y21/?y22/?y23/?y24/?y25/?y26/?y27/?y28;
-*!MM:M^v%y20 shown=%y21 hint=%y22 follow=%y23 skip=%y24 paints=%y25 fast=%y26 full=%y27 cursor=%y28^;
+*!FU(BattleShadow_Debug):P?y20/?y21/?y22/?y23/?y24/?y25/?y26/?y27/?y28/?y29/?y30;
+*!MM:M^v%y20 shown=%y21 hint=%y22 follow=%y23 skip=%y24 game=%y25 own=%y26 full=%y27 cursor=%y28 opt=%y29 hook=%y30^;
