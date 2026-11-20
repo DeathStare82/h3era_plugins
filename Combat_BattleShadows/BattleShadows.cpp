@@ -12,8 +12,8 @@ constexpr INT32 COLUMNS = 17;
 constexpr INT32 BATTLE_HEXES = 187;
 constexpr INT32 MAX_RADIUS = 4;
 constexpr INT32 HEX_SLOTS = 10;  // BattleShadow_Hexes / BattleShadow_Stacks: x1..x10, x11 = contour
-constexpr INT32 SKIP_SLOTS = 16; // BattleShadow_SkipStacks: x1..x16
-constexpr INT32 PLUGIN_VERSION = 7;
+constexpr INT32 SKIP_SLOTS = 16; // BattleShadow_SkipStacks / BattleShadow_SkipHexes: x1..x16
+constexpr INT32 PLUGIN_VERSION = 9;
 constexpr const char *MOUSE_HINT_EVENT = "OnBattleMouseHint"; // !?MM0
 
 // How the shadows are drawn (v7): with the game's own cursor shadow layer, the one Fireball aiming uses.
@@ -38,7 +38,9 @@ constexpr UINT REDRAW_BATTLEFIELD = 0x493FC0;    // thiscall(combat, 6 args); (1
 constexpr UINT PCX16_COPY = 0x44DF80;  // thiscall(src, sx, sy, w, h, dstBuffer, dx, dy, dstW, dstH, dstStride, transparent)
 constexpr UINT PCX16_SHADE = 0x44E370; // thiscall(dst, x, y, w, h, H3LoadedPcx *mask, 0, 0): CCellShd onto the ground
 constexpr UINT PCX16_CTOR = 0x44DC40;  // thiscall(pcx, width, height): how the game makes its own save buffer (0x462793)
-constexpr UINT CURSOR_SHADOW_OPTION = 0x698810; // game option "cursor shadow"
+constexpr UINT DRAW_MOVEMENT_GRID = 0x4934B0; // thiscall(combat, full, recompute) -> BOOL8: movement range shade + grid
+constexpr UINT CURSOR_SHADOW_OPTION = 0x698810;   // game option "cursor shadow"
+constexpr UINT MOVEMENT_SHADOW_OPTION = 0x698814; // game option "movement shadow" (only 0x4934B0 draws with it)
 constexpr UINT ACTION_IN_PROGRESS = 0x698A3C;   // 0x493F10 ignores flag-0 calls while it is set
 constexpr UINT LAST_SHADE_ANCHOR = 0x6772D8;    // anchorHex of the last 0x493A20 drawing
 constexpr UINT NATIVE_SAVE_BUFFER = 0x53B4;     // H3CombatManager: H3LoadedPcx16 * of 0x493A20 (19 slots)
@@ -54,7 +56,8 @@ struct ShadowState
     // Set by ERM during the current mouse hint; dropped before every !?MM0.
     std::vector<INT32> hintHexes;
     std::vector<INT32> hintContourHexes;
-    std::vector<INT32> skipHexes; // stacks standing on these hexes are never shaded or outlined
+    std::vector<INT32> skipHexes;     // stacks standing on these hexes are never shaded or outlined
+    std::vector<INT32> excludedHexes; // these hexes are never shaded (BattleShadow_SkipHexes)
     INT32 hintAnchor = -1;        // cursor hex the hint shapes belong to
     // Follow mode: a radius around the hex under the mouse, kept until switched off or the next battle action.
     INT32 followRadius = -1;
@@ -69,6 +72,9 @@ struct ShadowState
     std::vector<INT32> portHexes; // sorted
     // Stack outlines switched on by this plugin.
     std::vector<H3CombatCreature *> litStacks;
+    // BattleShadow_HideMovement: the movement range shade is left out of the battlefield background.
+    bool hideMovement = false;
+    bool showMovementAtAction = false;
     // Diagnostics.
     INT32 nativeDraws = 0;
     INT32 portDraws = 0;
@@ -88,6 +94,13 @@ H3CombatManager *ActiveCombat()
 bool CanDraw(H3CombatManager *combat)
 {
     return combat && combat == H3CombatManager::Get() && combat->dlg && !combat->finished && !combat->IsHiddenBattle();
+}
+
+// The battlefield is the window on top (nothing like the spell book covers it).
+bool BattlefieldOnTop(H3CombatManager *combat)
+{
+    H3WindowManager *windows = H3WindowManager::Get();
+    return CanDraw(combat) && windows && windows->lastDlg == combat->dlg;
 }
 
 INT32 CursorHex(H3CombatManager *combat)
@@ -232,6 +245,40 @@ void RestorePortHexes(H3CombatManager *combat)
     state.portActive = false;
 }
 
+// Step 1 of 0x493A20: puts back the ground under the game's list from the game's save buffer and empties the list.
+void RestoreNativeList(H3CombatManager *combat)
+{
+    H3Vector<INT32> *list = H3BattleShadowHexes::Get();
+    H3LoadedPcx16 *ground = combat->drawBuffer;
+    H3LoadedPcx16 *nativeSave =
+        *reinterpret_cast<H3LoadedPcx16 **>(reinterpret_cast<UINT8 *>(combat) + NATIVE_SAVE_BUFFER);
+    for (UINT32 i = 0; i < list->Size(); ++i)
+    {
+        const INT32 hex = (*list)[i];
+        if (hex < 0 || hex >= BATTLE_HEXES)
+            continue;
+        H3CombatSquare &square = combat->squares[hex];
+        UINT8 &slot = reinterpret_cast<UINT8 *>(&square)[SQUARE_SAVE_SLOT];
+        const INT32 index = INT32(INT8(slot));
+        if (ground && ground->buffer && nativeSave && nativeSave->buffer && index >= 0 && index < NATIVE_SLOTS)
+            CopyPixels(nativeSave, index * HEX_WIDTH, 0, HEX_WIDTH, SaveHeight(square), ground, square.left,
+                       square.top);
+        slot = 0xFF;
+    }
+    list->RemoveAll();
+}
+
+// Takes the whole layer off the battlefield background without showing anything (the background is about to be
+// rebuilt). The next commit draws it again.
+void ClearLayerSilently(H3CombatManager *combat)
+{
+    if (state.portActive)
+        RestorePortHexes(combat);
+    else
+        RestoreNativeList(combat);
+    IntAt(LAST_SHADE_ANCHOR) = -1;
+}
+
 // Steps 1-3 of 0x493A20 for any number of hexes: take the old list off (from our buffer, or from the game's buffer
 // when the game's list was shown), save the ground under the new hexes, shade them. Then the whole battlefield is
 // redrawn, as Fireball aiming does after every change.
@@ -245,25 +292,7 @@ bool PortDraw(H3CombatManager *combat, INT32 anchor, const std::vector<INT32> &h
     if (state.portActive)
         RestorePortHexes(combat);
     else
-    {
-        H3Vector<INT32> *list = H3BattleShadowHexes::Get();
-        H3LoadedPcx16 *nativeSave =
-            *reinterpret_cast<H3LoadedPcx16 **>(reinterpret_cast<UINT8 *>(combat) + NATIVE_SAVE_BUFFER);
-        for (UINT32 i = 0; i < list->Size(); ++i)
-        {
-            const INT32 hex = (*list)[i];
-            if (hex < 0 || hex >= BATTLE_HEXES)
-                continue;
-            H3CombatSquare &square = combat->squares[hex];
-            UINT8 &slot = reinterpret_cast<UINT8 *>(&square)[SQUARE_SAVE_SLOT];
-            const INT32 index = INT32(INT8(slot));
-            if (nativeSave && nativeSave->buffer && index >= 0 && index < NATIVE_SLOTS)
-                CopyPixels(nativeSave, index * HEX_WIDTH, 0, HEX_WIDTH, SaveHeight(square), ground, square.left,
-                           square.top);
-            slot = 0xFF;
-        }
-        list->RemoveAll(); // the game's list stays empty while our buffer holds the layer
-    }
+        RestoreNativeList(combat); // the game's list stays empty while our buffer holds the layer
     for (const INT32 hex : hexes)
     {
         const H3CombatSquare &square = combat->squares[hex];
@@ -369,6 +398,19 @@ void Commit(H3CombatManager *combat)
     state.cursorPending = false;
     if (!CanDraw(combat))
         return;
+    if (!combat->doNotDrawShade)
+    {
+        // The background waits to be rebuilt (BattleShadow_HideMovement, game options, obstacles). The next redraw
+        // would rebuild it and wipe shadows drawn now, so it is rebuilt first; under another window, later.
+        if (!BattlefieldOnTop(combat))
+        {
+            state.dirty = true;
+            return;
+        }
+        ClearLayerSilently(combat);
+        ++state.fullRedraws;
+        THISCALL_7(void, REDRAW_BATTLEFIELD, combat, 1, 1, 0, 0, 1, 0);
+    }
     std::vector<H3CombatCreature *> skipped;
     for (const INT32 hex : state.skipHexes)
         if (H3CombatCreature *stack = LiveStackAt(combat, hex))
@@ -390,15 +432,16 @@ void Commit(H3CombatManager *combat)
     for (const INT32 hex : hexes)
     {
         H3CombatCreature *stack = LiveStackAt(combat, hex);
-        if (IsShadable(hex) && !(stack && Contains(skipped, stack)))
+        if (IsShadable(hex) && !Contains(state.excludedHexes, hex) && !(stack && Contains(skipped, stack)))
             wanted.push_back(hex);
     }
     SortUnique(wanted);
+    // A stack is outlined through the hexes left in the area: a two-hex stack with one hex excluded still is.
     std::vector<H3CombatCreature *> stacks;
     for (const INT32 hex : contourHexes)
     {
         H3CombatCreature *stack = LiveStackAt(combat, hex);
-        if (stack && !Contains(skipped, stack))
+        if (stack && !Contains(state.excludedHexes, hex) && !Contains(skipped, stack))
             stacks.push_back(stack);
     }
     SortUnique(stacks);
@@ -422,6 +465,18 @@ void CommitSoon()
         Commit(ActiveCombat());
 }
 
+// Shows or hides the movement range: the background is rebuilt once (what the game does when its options change,
+// 0x4798F0), and HookDrawGrid leaves the movement range out while it is hidden. The shadows come off first and are
+// drawn again on the new background by the commit (now, or when the battlefield is on top again).
+void RebuildBackground(H3CombatManager *combat)
+{
+    if (!CanDraw(combat))
+        return; // the next background the game builds follows the new setting
+    ClearLayerSilently(combat);
+    combat->doNotDrawShade = FALSE; // = rebuild the background at the next battlefield redraw
+    CommitSoon();
+}
+
 void ClearHintShapes()
 {
     state.hintHexes.clear();
@@ -434,6 +489,7 @@ void Forget()
 {
     ClearHintShapes();
     state.skipHexes.clear();
+    state.excludedHexes.clear();
     state.followRadius = -1;
     state.followContour = false;
     state.dirty = false;
@@ -442,6 +498,8 @@ void Forget()
     state.portActive = false;
     state.portHexes.clear();
     state.litStacks.clear();
+    state.hideMovement = false;
+    state.showMovementAtAction = false;
 }
 
 void BeginHintChange(H3CombatManager *combat)
@@ -536,23 +594,52 @@ void __stdcall OnSkipStacks(Era::TEvent *)
     CommitSoon();
 }
 
-// !!FU(BattleShadow_Clear):P;  Removes everything, follow mode included.
+// !!FU(BattleShadow_SkipHexes):P(hex1)/.../(hex16);
+// These hexes are left out of every shadow, the game's own hex under the mouse included, and outline nothing (a stack
+// is still outlined through another of its hexes inside the area). For areas with a hole, such as Frost Ring:
+// BattleShadow_Radius (hex, 1) + BattleShadow_SkipHexes (hex). -1 = unused slot. Kept until the next !?MM0.
+void __stdcall OnSkipHexes(Era::TEvent *)
+{
+    for (INT32 slot = 1; slot <= SKIP_SLOTS; ++slot)
+        if (IsShadable(Era::x[slot]))
+            state.excludedHexes.push_back(Era::x[slot]);
+    CommitSoon();
+}
+
+// !!FU(BattleShadow_HideMovement):P(hide)/(untilAction);
+// x1 = 1 hides the movement range shade of the battlefield (as the game does while a spell is aimed), 0 shows it
+// again; x2 = 1 shows it again by itself when the next battle action starts. Only the picture changes: the game's
+// "movement shadow" option and the stack's movement stay as they are. It stays hidden, turn after turn, until shown
+// again (or the battle ends). Calling it again with the same value does nothing, so it can be called in every !?MM0.
+void __stdcall OnHideMovement(Era::TEvent *)
+{
+    const bool hide = Era::x[1] != 0;
+    state.showMovementAtAction = hide && Era::x[2] != 0;
+    if (hide == state.hideMovement)
+        return;
+    state.hideMovement = hide;
+    RebuildBackground(ActiveCombat());
+}
+
+// !!FU(BattleShadow_Clear):P;  Removes every shadow, follow mode included (not BattleShadow_HideMovement).
 void __stdcall OnClear(Era::TEvent *)
 {
     ClearHintShapes();
     state.skipHexes.clear();
+    state.excludedHexes.clear();
     state.followRadius = -1;
     state.followContour = false;
     CommitSoon();
 }
 
 // !!FU(BattleShadow_Debug):P?(version)/?(shown)/?(hint)/?(follow)/?(skip)/?(native)/?(own)/?(full)/?(cursor)/
-//                         ?(option)/?(hooked);
+//                         ?(option)/?(hooked)/?(movementHidden)/?(excluded);
 // x1 = plugin version (0 if this plugin did not answer), x2 = hexes in the shadow layer now, x3 = hexes asked for in
 // the current mouse hint, x4 = follow radius (-1 = off), x5 = skipped stack hexes, x6 = drawings by the game's
 // function, x7 = drawings with the plugin's buffer (more than 19 hexes), x8 = full battlefield redraws, x9 = hex under
 // the cursor as the plugin sees it, x10 = the game's "cursor shadow" option (0 = off: no shadows, like Fireball),
-// x11 = 1 if the mouse-move hook is in place (one drawing per hex change).
+// x11 = 1 if the mouse-move hook is in place (one drawing per hex change), x12 = 1 while BattleShadow_HideMovement
+// hides the movement range, x13 = hexes received by BattleShadow_SkipHexes.
 void __stdcall OnDebug(Era::TEvent *)
 {
     H3CombatManager *combat = ActiveCombat();
@@ -567,6 +654,8 @@ void __stdcall OnDebug(Era::TEvent *)
     Era::x[9] = combat ? CursorHex(combat) : -1;
     Era::x[10] = DwordAt(CURSOR_SHADOW_OPTION) ? 1 : 0;
     Era::x[11] = mouseMoveHookInstalled ? 1 : 0;
+    Era::x[12] = state.hideMovement ? 1 : 0;
+    Era::x[13] = INT32(state.excludedHexes.size());
 }
 
 // ERA calls plugin handlers of a trigger before its ERM code: every !?MM0 starts with no hint shapes and no
@@ -575,22 +664,36 @@ void __stdcall OnBattleMouseHint(Era::TEvent *)
 {
     ClearHintShapes();
     state.skipHexes.clear();
+    state.excludedHexes.clear();
     H3CombatManager *combat = ActiveCombat();
     state.hintAnchor = combat ? CursorHex(combat) : -1;
     state.dirty = true;
 }
 
 // The action takes the cursor shadow off by itself (0x4786B0 calls 0x493F10(-1, 1), which reaches HookShadeHexes).
-// Outlines are switched off without a redraw: the action redraws the battlefield.
+// Outlines are switched off without a redraw: the action redraws the battlefield. A movement range hidden with
+// "until the next action" comes back with the next background the game builds.
 void __stdcall OnBeforeBattleAction(Era::TEvent *)
 {
     ClearHintShapes();
     state.skipHexes.clear();
+    state.excludedHexes.clear();
     state.followRadius = -1;
     state.followContour = false;
     state.dirty = false;
     state.cursorPending = false;
     DropContours();
+    if (state.hideMovement && state.showMovementAtAction)
+    {
+        state.hideMovement = false;
+        state.showMovementAtAction = false;
+        H3CombatManager *combat = ActiveCombat();
+        if (CanDraw(combat))
+        {
+            ClearLayerSilently(combat);
+            combat->doNotDrawShade = FALSE;
+        }
+    }
 }
 
 void __stdcall OnLeaveBattleContext(Era::TEvent *)
@@ -644,6 +747,7 @@ void __stdcall HookShadeHexes(HiHook *hook, H3CombatManager *combat, INT32 ancho
     {
         ClearHintShapes();
         state.skipHexes.clear();
+        state.excludedHexes.clear();
         state.cursorHex = -1;
         state.cursorPending = false;
     }
@@ -670,6 +774,20 @@ void __stdcall HookShadeHexes(HiHook *hook, H3CombatManager *combat, INT32 ancho
         return;
     }
     Draw(combat, anchor, requested, forced);
+}
+
+// The movement range part of the background (0x4934B0) reads the "movement shadow" option. While the movement
+// range is hidden, the option reads 0 for this one call and is put back right after it: the game's setting, the
+// options dialog and the stack's movement never see the change. The grid and the tactics zone stay as they are.
+INT __stdcall HookDrawGrid(HiHook *hook, H3CombatManager *combat, INT32 full, INT32 recompute)
+{
+    if (!state.hideMovement)
+        return THISCALL_3(INT, hook->GetDefaultFunc(), combat, full, recompute);
+    const UINT option = DwordAt(MOVEMENT_SHADOW_OPTION);
+    DwordAt(MOVEMENT_SHADOW_OPTION) = 0;
+    const INT result = THISCALL_3(INT, hook->GetDefaultFunc(), combat, full, recompute);
+    DwordAt(MOVEMENT_SHADOW_OPTION) = option;
+    return result;
 }
 
 // Every combat screen message passes here, mouse moves included: follow mode reacts as fast as the cursor, and the
@@ -705,7 +823,9 @@ void RegisterEvents()
     Era::RegisterHandler(OnHexes, "BattleShadow_Hexes");
     Era::RegisterHandler(OnStacks, "BattleShadow_Stacks");
     Era::RegisterHandler(OnSkipStacks, "BattleShadow_SkipStacks");
+    Era::RegisterHandler(OnSkipHexes, "BattleShadow_SkipHexes");
     Era::RegisterHandler(OnClear, "BattleShadow_Clear");
+    Era::RegisterHandler(OnHideMovement, "BattleShadow_HideMovement");
     Era::RegisterHandler(OnDebug, "BattleShadow_Debug");
     Era::RegisterHandler(OnBattleMouseHint, MOUSE_HINT_EVENT);
     Era::RegisterHandler(OnBeforeBattleAction, "OnBeforeBattleAction");
@@ -723,6 +843,7 @@ void InstallHooks(PatcherInstance *patcher)
     installed = true;
     patcher->WriteHiHook(COMBAT_DLG_PROC, SPLICE_, THISCALL_, HookCombatProcedure);
     shadeHook = patcher->WriteHiHook(SHADE_HEXES, SPLICE_, THISCALL_, HookShadeHexes);
+    patcher->WriteHiHook(DRAW_MOVEMENT_GRID, SPLICE_, THISCALL_, HookDrawGrid);
     // Only when the call site is the one this plugin was written for (call 0x493F10, not already taken).
     const INT32 relative = INT32(CURSOR_SHADE) - INT32(MOUSE_MOVE_SHADE_CALL + 5);
     if (ByteAt(MOUSE_MOVE_SHADE_CALL) == 0xE8 && IntAt(MOUSE_MOVE_SHADE_CALL + 1) == relative)

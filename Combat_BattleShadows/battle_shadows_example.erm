@@ -1,6 +1,6 @@
 ZVSE2
 
-; Combat_BattleShadows (v7) example. Put this file into the Data\s folder of your mod. See README.md.
+; Combat_BattleShadows (v9) example. Put this file into the Data\s folder of your mod. See README.md.
 ; Shadows are drawn by the game's own cursor shadow function, exactly like Fireball aiming. They need the game's
 ; "cursor shadow" combat option, like Fireball's area does.
 
@@ -24,6 +24,21 @@ ZVSE2
 *?MM0;
 *!FU(BattleShadow_Stacks):P52/120/-1/-1/-1/-1/-1/-1/-1/-1/1;
 
+; Example 5 (off): Frost Ring, a radius 1 ring without its centre hex, with outlines.
+*?MM0;
+*!MM:D?y9;
+*!FU(BattleShadow_Radius):Py9/1/1;
+*!FU(BattleShadow_SkipHexes):Py9;
+
+; Example 4 (off): hide the movement range of the active stack while a spell is aimed, as Fireball aiming does.
+;   P1 = hide (stays hidden until P0), P0 = show again, P1/1 = hide until the next battle action starts.
+;   Calling it again with the same value does nothing, so it can be called in every hint.
+;   Here ^My_Spell_Aiming^ stands for your own variable that is 1 while your mod aims a spell.
+*?MM0;
+*!SN:W^My_Spell_Aiming^/?y1;
+*!FU(BattleShadow_HideMovement)&y1=0:P0;
+*!FU(BattleShadow_HideMovement)&y1=1:P1;
+
 ; Diagnostics (off): shows the plugin state in the battle hint line instead of the normal hint.
-*!FU(BattleShadow_Debug):P?y20/?y21/?y22/?y23/?y24/?y25/?y26/?y27/?y28/?y29/?y30;
-*!MM:M^v%y20 shown=%y21 hint=%y22 follow=%y23 skip=%y24 game=%y25 own=%y26 full=%y27 cursor=%y28 opt=%y29 hook=%y30^;
+*!FU(BattleShadow_Debug):P?y20/?y21/?y22/?y23/?y24/?y25/?y26/?y27/?y28/?y29/?y30/?y31/?y32;
+*!MM:M^v%y20 shown=%y21 hint=%y22 follow=%y23 skip=%y24 game=%y25 own=%y26 full=%y27 cursor=%y28 opt=%y29 hook=%y30 move=%y31 xhex=%y32^;
