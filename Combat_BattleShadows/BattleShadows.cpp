@@ -13,7 +13,7 @@ constexpr INT32 BATTLE_HEXES = 187;
 constexpr INT32 MAX_RADIUS = 4;
 constexpr INT32 HEX_SLOTS = 10;  // BattleShadow_Hexes / BattleShadow_Stacks: x1..x10, x11 = contour
 constexpr INT32 SKIP_SLOTS = 16; // BattleShadow_SkipStacks / BattleShadow_SkipHexes: x1..x16
-constexpr INT32 PLUGIN_VERSION = 9;
+constexpr INT32 PLUGIN_VERSION = 10;
 constexpr const char *MOUSE_HINT_EVENT = "OnBattleMouseHint"; // !?MM0
 
 // How the shadows are drawn (v7): with the game's own cursor shadow layer, the one Fireball aiming uses.
@@ -465,16 +465,25 @@ void CommitSoon()
         Commit(ActiveCombat());
 }
 
-// Shows or hides the movement range: the background is rebuilt once (what the game does when its options change,
-// 0x4798F0), and HookDrawGrid leaves the movement range out while it is hidden. The shadows come off first and are
-// drawn again on the new background by the commit (now, or when the battlefield is on top again).
-void RebuildBackground(H3CombatManager *combat)
+// Rebuilds the battlefield background and shows it at once (what the game does when its options change, 0x4798F0);
+// HookDrawGrid leaves the movement range out while it is hidden. The shadows come off first and are drawn again on
+// the new background by the commit. With `recompute`, the active stack's movement range is first worked out again
+// from its current speed (0x4934B0 with recompute = 1): rebuilding alone draws the range the game worked out last,
+// for example before ERM changed the speed.
+void RebuildBackground(H3CombatManager *combat, bool recompute)
 {
     if (!CanDraw(combat))
         return; // the next background the game builds follows the new setting
     ClearLayerSilently(combat);
+    if (recompute)
+        THISCALL_3(INT, DRAW_MOVEMENT_GRID, combat, 0, 1);
     combat->doNotDrawShade = FALSE; // = rebuild the background at the next battlefield redraw
-    CommitSoon();
+    if (BattlefieldOnTop(combat))
+    {
+        ++state.fullRedraws;
+        THISCALL_7(void, REDRAW_BATTLEFIELD, combat, 1, 1, 0, 0, 1, 0);
+    }
+    CommitSoon(); // under another window the commit rebuilds it when the battlefield is on top again
 }
 
 void ClearHintShapes()
@@ -611,6 +620,7 @@ void __stdcall OnSkipHexes(Era::TEvent *)
 // again; x2 = 1 shows it again by itself when the next battle action starts. Only the picture changes: the game's
 // "movement shadow" option and the stack's movement stay as they are. It stays hidden, turn after turn, until shown
 // again (or the battle ends). Calling it again with the same value does nothing, so it can be called in every !?MM0.
+// Showing it again works the range out anew from the stack's current speed: put the speed back before P0.
 void __stdcall OnHideMovement(Era::TEvent *)
 {
     const bool hide = Era::x[1] != 0;
@@ -618,7 +628,15 @@ void __stdcall OnHideMovement(Era::TEvent *)
     if (hide == state.hideMovement)
         return;
     state.hideMovement = hide;
-    RebuildBackground(ActiveCombat());
+    RebuildBackground(ActiveCombat(), !hide);
+}
+
+// !!FU(BattleShadow_RefreshMovement):P;
+// Works the active stack's movement range out again from its current speed and shows it at once, for example after
+// ERM changed the speed (!!BM:S). While the range is hidden, only the range is worked out (it shows with P0).
+void __stdcall OnRefreshMovement(Era::TEvent *)
+{
+    RebuildBackground(ActiveCombat(), true);
 }
 
 // !!FU(BattleShadow_Clear):P;  Removes every shadow, follow mode included (not BattleShadow_HideMovement).
@@ -826,6 +844,7 @@ void RegisterEvents()
     Era::RegisterHandler(OnSkipHexes, "BattleShadow_SkipHexes");
     Era::RegisterHandler(OnClear, "BattleShadow_Clear");
     Era::RegisterHandler(OnHideMovement, "BattleShadow_HideMovement");
+    Era::RegisterHandler(OnRefreshMovement, "BattleShadow_RefreshMovement");
     Era::RegisterHandler(OnDebug, "BattleShadow_Debug");
     Era::RegisterHandler(OnBattleMouseHint, MOUSE_HINT_EVENT);
     Era::RegisterHandler(OnBeforeBattleAction, "OnBeforeBattleAction");

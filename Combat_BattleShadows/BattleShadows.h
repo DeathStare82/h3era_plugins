@@ -13,6 +13,7 @@ namespace battle_shadows
 //   !!FU(BattleShadow_SkipHexes):P(hex1)/.../(hex16);                   hexes never shaded (Frost Ring centre)
 //   !!FU(BattleShadow_Clear):P;
 //   !!FU(BattleShadow_HideMovement):P(1 hide, 0 show)/(1 = show again at the next battle action);
+//   !!FU(BattleShadow_RefreshMovement):P;                                movement range again from the current speed
 //   !!FU(BattleShadow_Debug):P?(version)/...                            diagnostics, see README.md
 // Radius/Hexes/Stacks/SkipStacks/SkipHexes are dropped before every !?MM0 (OnBattleMouseHint); everything, follow mode
 // included, is dropped before every battle action. The shadows are drawn by the game's cursor shadow function

@@ -1,6 +1,6 @@
 ZVSE2
 
-; Combat_BattleShadows (v9) example. Put this file into the Data\s folder of your mod. See README.md.
+; Combat_BattleShadows (v10) example. Put this file into the Data\s folder of your mod. See README.md.
 ; Shadows are drawn by the game's own cursor shadow function, exactly like Fireball aiming. They need the game's
 ; "cursor shadow" combat option, like Fireball's area does.
 
@@ -33,6 +33,8 @@ ZVSE2
 ; Example 4 (off): hide the movement range of the active stack while a spell is aimed, as Fireball aiming does.
 ;   P1 = hide (stays hidden until P0), P0 = show again, P1/1 = hide until the next battle action starts.
 ;   Calling it again with the same value does nothing, so it can be called in every hint.
+;   P0 works the range out again from the stack's current speed: put a changed speed back before P0.
+;   After a speed change while the range is shown: !!FU(BattleShadow_RefreshMovement):P;
 ;   Here ^My_Spell_Aiming^ stands for your own variable that is 1 while your mod aims a spell.
 *?MM0;
 *!SN:W^My_Spell_Aiming^/?y1;
