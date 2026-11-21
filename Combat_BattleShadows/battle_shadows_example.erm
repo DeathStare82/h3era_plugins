@@ -1,6 +1,6 @@
 ZVSE2
 
-; Combat_BattleShadows (v10) example. Put this file into the Data\s folder of your mod. See README.md.
+; Combat_BattleShadows (v12) example. Put this file into the Data\s folder of your mod. See README.md.
 ; Shadows are drawn by the game's own cursor shadow function, exactly like Fireball aiming. They need the game's
 ; "cursor shadow" combat option, like Fireball's area does.
 

@@ -13,7 +13,7 @@ constexpr INT32 BATTLE_HEXES = 187;
 constexpr INT32 MAX_RADIUS = 4;
 constexpr INT32 HEX_SLOTS = 10;  // BattleShadow_Hexes / BattleShadow_Stacks: x1..x10, x11 = contour
 constexpr INT32 SKIP_SLOTS = 16; // BattleShadow_SkipStacks / BattleShadow_SkipHexes: x1..x16
-constexpr INT32 PLUGIN_VERSION = 10;
+constexpr INT32 PLUGIN_VERSION = 12;
 constexpr const char *MOUSE_HINT_EVENT = "OnBattleMouseHint"; // !?MM0
 
 // How the shadows are drawn (v7): with the game's own cursor shadow layer, the one Fireball aiming uses.
@@ -593,13 +593,18 @@ void __stdcall OnStacks(Era::TEvent *)
 }
 
 // !!FU(BattleShadow_SkipStacks):P(hex1)/.../(hex16);
-// Stacks standing on these hexes are left out of every shadow and outline (the spell does not affect them), the
-// game's own hex under the mouse included. -1 = unused slot. Kept until the next !?MM0.
+// Stacks standing on these hexes are left out of every shadow and outline (the spell does not affect them), all of
+// their hexes and the game's own hex under the mouse included. -1 and 0 = unused slot. Kept until the next !?MM0.
+// Any field hex is taken, the edge columns 0 and 16 too: war machines stand there (!!BM:P gives 51 for the attacker's
+// ballista, 153 for its first aid tent), while their other hex is in column 1.
 void __stdcall OnSkipStacks(Era::TEvent *)
 {
     for (INT32 slot = 1; slot <= SKIP_SLOTS; ++slot)
-        if (IsShadable(Era::x[slot]))
-            state.skipHexes.push_back(Era::x[slot]);
+    {
+        const INT32 hex = Era::x[slot];
+        if (hex > 0 && hex < BATTLE_HEXES)
+            state.skipHexes.push_back(hex);
+    }
     CommitSoon();
 }
 
